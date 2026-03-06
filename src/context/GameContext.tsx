@@ -69,6 +69,7 @@ interface GameState {
   roundResult: RoundResult | null
   playerPositions: PlayerPosition[]
   sessionId: string | null
+  sessionLoaded: boolean
 }
 
 interface GameContextType extends GameState {
@@ -158,6 +159,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [playerPositions, setPlayerPositions] = useState<PlayerPosition[]>([])
   const [isGameMaster, setIsGameMaster] = useState(false)
   const [bettingEndsAt, setBettingEndsAt] = useState<number | null>(null)
+  const [sessionLoaded, setSessionLoaded] = useState(false)
 
   const knockTimerRef = useRef<NodeJS.Timeout | null>(null)
   const patrolTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -455,6 +457,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         isGameMasterRef.current = true
         setIsGameMaster(true)
         console.log('[Multiplayer] 👑 Fallback: becoming local master after init error')
+      } finally {
+        // Always mark session as loaded so UI can render the correct state
+        setSessionLoaded(true)
       }
     }
 
@@ -991,6 +996,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       roundResult,
       playerPositions,
       sessionId,
+      sessionLoaded,
       placeFreeBet,
       placeGamblingBet,
       selectRoom,

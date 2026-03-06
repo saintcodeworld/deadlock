@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useGame } from '@/context/GameContext'
-import { Skull, Clock, Coins, Play, Gift, Swords, TrendingUp, Trophy, Flame } from 'lucide-react'
+import { Skull, Clock, Coins, Play, Gift, Swords, TrendingUp, Trophy, Flame, Lock } from 'lucide-react'
 
 interface BettingSidebarProps {
   onOpenFreeBet: () => void
@@ -122,8 +122,8 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
         )}
       </div>
 
-      {/* ── Two Betting Buttons (only during betting) ── */}
-      {gamePhase === 'betting' && (
+      {/* ── Betting Buttons (only during betting phase) ── */}
+      {gamePhase === 'betting' ? (
         <div className="px-5 py-4 space-y-3 border-b border-gray-800/50">
           {/* Free Prediction — GREEN */}
           <button
@@ -169,6 +169,34 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
               <span className="text-amber-400 text-xs font-bold bg-amber-500/10 px-2 py-1 rounded font-mono">SOL</span>
             </div>
           </button>
+        </div>
+      ) : (
+        /* ── ROUND IN PROGRESS — locked for new joiners ── */
+        <div className="px-5 py-4 border-b border-gray-800/50">
+          <div className="rounded-xl border border-gray-700/60 bg-gray-800/40 p-4 flex flex-col items-center gap-3 text-center">
+            <div className="w-11 h-11 rounded-full bg-gray-700/60 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-gray-400" />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm">
+                {gamePhase === 'knocking' && 'Killer is checking rooms...'}
+                {gamePhase === 'killing' && 'Killer strikes!'}
+                {gamePhase === 'result' && 'Round over!'}
+              </p>
+              <p className="text-gray-500 text-[11px] mt-1 font-mono">
+                Betting opens next round
+              </p>
+            </div>
+            <motion.div
+              className="w-full py-2 rounded-lg bg-gray-700/40 border border-gray-600/30"
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              <p className="text-gray-400 text-xs font-mono font-bold tracking-widest">
+                {gamePhase === 'result' ? '⏳ STARTING NEXT ROUND...' : '⏳ WATCH &amp; WAIT'}
+              </p>
+            </motion.div>
+          </div>
         </div>
       )}
 
