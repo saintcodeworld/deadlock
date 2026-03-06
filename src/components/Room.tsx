@@ -22,27 +22,27 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
   const playersInRoom = playerPositions.filter((p: any) => p.roomId === room.id)
 
   const overlayFill = isBeingKilled
-    ? 'rgba(255, 0, 0, 0.3)'
+    ? 'rgba(255, 0, 0, 0.4)'
     : isBeingKnocked
-    ? 'rgba(255, 100, 0, 0.12)'
+    ? 'rgba(138, 3, 3, 0.2)'
     : isKillerHere
-    ? 'rgba(255, 30, 30, 0.18)'
+    ? 'rgba(255, 26, 26, 0.2)'
     : isSelected
-    ? 'rgba(0, 212, 255, 0.15)'
-    : 'rgba(255, 255, 255, 0.0)'
+    ? 'rgba(255, 255, 255, 0.1)'
+    : 'rgba(5, 5, 5, 0.3)'
 
   const hoverFill = canClick
-    ? 'rgba(0, 212, 255, 0.1)'
+    ? 'rgba(255, 255, 255, 0.05)'
     : overlayFill
 
   const borderColor = isBeingKilled
     ? '#ff0000'
     : isBeingKnocked
-    ? '#ff6600'
+    ? '#8a0303'
     : isKillerHere
-    ? '#ff3333'
+    ? '#ff1a1a'
     : isSelected
-    ? '#00d4ff'
+    ? '#ffffff'
     : 'rgba(255,255,255,0.08)'
 
   const labelCx = room.x + room.width / 2
@@ -64,30 +64,42 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
       <motion.rect
         x={room.x + 1} y={room.y + 1}
         width={room.width - 2} height={room.height - 2}
-        rx={2}
+        rx={0} // Sharp corners for horror
         fill={overlayFill}
         stroke={borderColor}
         strokeWidth={isSelected || isKillerHere || isBeingKnocked || isBeingKilled ? 1.5 : 0.5}
-        filter={isSelected ? 'url(#glow)' : undefined}
+        filter={isSelected || isBeingKilled ? 'url(#glow)' : undefined}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
         whileHover={canClick ? { fill: hoverFill } : undefined}
       />
 
+      {/* Noise overlay on room when selected or targeted */}
+      {(isSelected || isBeingKnocked || isBeingKilled) && (
+        <rect
+          x={room.x + 1} y={room.y + 1}
+          width={room.width - 2} height={room.height - 2}
+          fill="url(#noiseFilter)"
+          opacity="0.1"
+          style={{ mixBlendMode: 'overlay' }}
+          pointerEvents="none"
+        />
+      )}
+
       {/* Room number badge */}
       <g>
         <rect
           x={room.x + 8} y={room.y + 8}
-          width={22} height={22} rx={6}
-          fill={isBeingKilled ? '#880000' : isBeingKnocked ? '#884400' : isKillerHere ? '#cc0000' : isSelected ? '#006688' : 'rgba(0,0,0,0.6)'}
-          stroke={isBeingKilled ? '#ff0000' : isBeingKnocked ? '#ff6600' : isKillerHere ? '#ff4444' : isSelected ? '#00d4ff' : 'rgba(255,255,255,0.2)'}
+          width={22} height={22} rx={0}
+          fill={isBeingKilled ? '#8a0303' : isBeingKnocked ? '#3e0000' : isKillerHere ? '#cc0000' : isSelected ? '#ffffff' : 'rgba(5,5,5,0.8)'}
+          stroke={isBeingKilled ? '#ff1a1a' : isBeingKnocked ? '#8a0303' : isKillerHere ? '#ff1a1a' : isSelected ? '#ffffff' : 'rgba(255,255,255,0.2)'}
           strokeWidth={1}
         />
         <text
           x={room.x + 19} y={room.y + 23}
           textAnchor="middle"
-          fill={isBeingKilled ? '#ff4444' : isBeingKnocked ? '#ffaa44' : isKillerHere ? '#ffcccc' : isSelected ? '#00ffff' : 'rgba(255,255,255,0.7)'}
+          fill={isBeingKilled ? '#ffffff' : isBeingKnocked ? '#ff1a1a' : isKillerHere ? '#ffffff' : isSelected ? '#050505' : 'rgba(255,255,255,0.7)'}
           fontSize="11" fontFamily="monospace" fontWeight="bold"
         >
           {room.id}
@@ -98,16 +110,18 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
       <g>
         <rect
           x={labelCx - room.name.length * 3.5 - 6} y={labelCy - 8}
-          width={room.name.length * 7 + 12} height={16} rx={4}
-          fill="rgba(0,0,0,0.55)"
+          width={room.name.length * 7 + 12} height={16} rx={0}
+          fill="rgba(5,5,5,0.8)"
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth="0.5"
         />
         <text
           x={labelCx} y={labelCy + 4}
           textAnchor="middle"
-          fill={isBeingKilled ? '#ff4444' : isBeingKnocked ? '#ffaa44' : isKillerHere ? '#ff8888' : isSelected ? '#00e5ff' : 'rgba(255,255,255,0.65)'}
-          fontSize="10" fontFamily="monospace" fontWeight="600" letterSpacing="0.5"
+          fill={isBeingKilled ? '#ff1a1a' : isBeingKnocked ? '#8a0303' : isKillerHere ? '#ff1a1a' : isSelected ? '#ffffff' : 'rgba(255,255,255,0.65)'}
+          fontSize="10" fontFamily="monospace" fontWeight="bold" letterSpacing="1"
         >
-          {room.name}
+          {room.name.toUpperCase()}
         </text>
       </g>
 
@@ -115,14 +129,14 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
       {totalGambling > 0 && (
         <g>
           <rect
-            x={room.x + room.width - 52} y={room.y + room.height - 22}
-            width={46} height={18} rx={9}
-            fill="#f59e0b" opacity={0.95}
+            x={room.x + room.width - 56} y={room.y + room.height - 22}
+            width={50} height={16} rx={0}
+            fill="rgba(5,5,5,0.9)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"
           />
           <text
-            x={room.x + room.width - 29} y={room.y + room.height - 10}
-            textAnchor="middle" fill="#0a0a0a"
-            fontSize="9" fontFamily="monospace" fontWeight="bold"
+            x={room.x + room.width - 31} y={room.y + room.height - 11}
+            textAnchor="middle" fill="#ffffff"
+            fontSize="8" fontFamily="monospace" fontWeight="bold"
           >
             {totalGambling} SOL
           </text>
@@ -133,15 +147,15 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
         <g>
           <rect
             x={room.x + 8} y={room.y + room.height - 22}
-            width={32} height={18} rx={9}
-            fill="#10b981" opacity={0.9}
+            width={32} height={16} rx={0}
+            fill="rgba(5,5,5,0.9)" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"
           />
           <text
-            x={room.x + 24} y={room.y + room.height - 10}
-            textAnchor="middle" fill="#fff"
+            x={room.x + 24} y={room.y + room.height - 11}
+            textAnchor="middle" fill="#ffffff"
             fontSize="8" fontFamily="monospace" fontWeight="bold"
           >
-            {freeCount}🎯
+            {freeCount} 💀
           </text>
         </g>
       )}
@@ -157,17 +171,17 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
             <circle
               cx={avatarX}
               cy={avatarY}
-              r={8}
-              fill="#00d4ff"
+              r={7}
+              fill="rgba(5,5,5,0.8)"
               stroke="#ffffff"
-              strokeWidth={1.5}
+              strokeWidth={1}
             />
             <text
               x={avatarX}
               y={avatarY + 3}
               textAnchor="middle"
-              fill="#000"
-              fontSize="10"
+              fill="#ffffff"
+              fontSize="9"
               fontWeight="bold"
             >
               👤
@@ -176,17 +190,20 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
               x={avatarX - 18}
               y={avatarY + 12}
               width={36}
-              height={12}
-              rx={3}
-              fill="rgba(0,0,0,0.7)"
+              height={10}
+              rx={0}
+              fill="rgba(5,5,5,0.9)"
+              stroke="rgba(255,255,255,0.2)"
+              strokeWidth="0.5"
             />
             <text
               x={avatarX}
-              y={avatarY + 20}
+              y={avatarY + 19}
               textAnchor="middle"
-              fill="#00d4ff"
-              fontSize="6"
+              fill="#ffffff"
+              fontSize="5"
               fontFamily="monospace"
+              letterSpacing="0.5"
             >
               {shortAddress}
             </text>
@@ -194,36 +211,37 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
         )
       })}
 
-      {/* Knocking indicator — orange pulse on room border */}
+      {/* Knocking indicator — dark blood pulse on room border */}
       {isBeingKnocked && (
         <motion.rect
           x={room.x + 2} y={room.y + 2}
-          width={room.width - 4} height={room.height - 4} rx={2}
-          fill="none" stroke="#ff6600" strokeWidth={2}
+          width={room.width - 4} height={room.height - 4} rx={0}
+          fill="none" stroke="#8a0303" strokeWidth={2}
           animate={{ opacity: [0.8, 0.2, 0.8] }}
-          transition={{ duration: 0.5, repeat: Infinity, ease: 'easeInOut' }}
+          transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
         />
       )}
 
-      {/* Kill room — red pulsing overlay */}
+      {/* Kill room — bright blood pulsing overlay with glitch */}
       {isBeingKilled && (
         <>
           <motion.rect
             x={room.x + 2} y={room.y + 2}
-            width={room.width - 4} height={room.height - 4} rx={2}
-            fill="rgba(255,0,0,0.15)" stroke="#ff0000" strokeWidth={3}
-            animate={{ opacity: [0.8, 0.3, 0.8], fill: ['rgba(255,0,0,0.25)', 'rgba(255,0,0,0.05)', 'rgba(255,0,0,0.25)'] }}
-            transition={{ duration: 0.4, repeat: Infinity, ease: 'easeInOut' }}
+            width={room.width - 4} height={room.height - 4} rx={0}
+            fill="rgba(255,0,0,0.15)" stroke="#ff1a1a" strokeWidth={3}
+            animate={{ opacity: [0.8, 0.3, 0.9, 0.2, 0.8], fill: ['rgba(255,0,0,0.25)', 'rgba(255,0,0,0.05)', 'rgba(255,0,0,0.3)', 'rgba(255,0,0,0.05)', 'rgba(255,0,0,0.25)'] }}
+            transition={{ duration: 0.4, repeat: Infinity, ease: 'linear' }}
           />
           {/* Screen shake effect text */}
           <motion.text
             x={labelCx} y={room.y + room.height - 30}
-            textAnchor="middle" fill="#ff0000"
-            fontSize="9" fontFamily="monospace" fontWeight="bold"
-            animate={{ opacity: [1, 0.5, 1], x: [labelCx - 2, labelCx + 2, labelCx] }}
+            textAnchor="middle" fill="#ff1a1a"
+            fontSize="10" fontFamily="monospace" fontWeight="bold" letterSpacing="2"
+            animate={{ opacity: [1, 0.5, 1], x: [labelCx - 3, labelCx + 3, labelCx - 1, labelCx + 2, labelCx] }}
             transition={{ duration: 0.2, repeat: Infinity }}
+            style={{ textShadow: '0 0 10px #ff1a1a' }}
           >
-            ☠ KILLING ☠
+            FATALITY
           </motion.text>
         </>
       )}

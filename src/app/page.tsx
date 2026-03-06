@@ -8,7 +8,11 @@ import { FreeBetPopup } from '@/components/FreeBetPopup'
 import { GamblingBetPopup } from '@/components/GamblingBetPopup'
 import { BetTypeChooser } from '@/components/BetTypeChooser'
 import { GameProvider, useGame } from '@/context/GameContext'
+import { ChatProvider } from '@/context/ChatContext'
 import { DevBuyToast } from '@/components/DevBuyToast'
+import { ChatSidebar } from '@/components/ChatSidebar'
+import { LoadingScreen } from '@/components/LoadingScreen'
+import { AnimatePresence } from 'framer-motion'
 
 function GameInner() {
   const { gamePhase, sessionLoaded } = useGame()
@@ -35,29 +39,29 @@ function GameInner() {
   }
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden">
+    <main className="relative h-screen w-screen overflow-hidden bg-void selection:bg-blood">
+      {/* Noise overlay */}
+      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] z-0 pointer-events-none mix-blend-overlay" />
+      
       {/* Full screen house map background */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 z-10">
         <HouseMap onRoomClick={handleRoomClick} />
       </div>
 
-      {/* Loading overlay — shown until we know the real game state */}
-      {!sessionLoaded && (
-        <div className="absolute inset-0 z-50 bg-gray-950/95 flex flex-col items-center justify-center gap-4">
-          <div className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400 text-sm font-mono tracking-widest uppercase">Connecting to game...</p>
-        </div>
-      )}
+      {/* Loading overlay */}
+      <AnimatePresence mode="wait">
+        {!sessionLoaded && <LoadingScreen key="loading" />}
+      </AnimatePresence>
 
       {/* Overlay UI */}
-      <div className="absolute inset-0 pointer-events-none">
+      <div className="absolute inset-0 pointer-events-none z-20 flex flex-col">
         {/* Header overlay */}
         <div className="pointer-events-auto">
           <GameHeader />
         </div>
 
         {/* Betting sidebar overlay - right side */}
-        <div className="absolute top-20 right-4 bottom-4 w-80 pointer-events-auto">
+        <div className="absolute top-28 right-8 bottom-8 w-80 pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.9)]">
           <BettingSidebar
             onOpenFreeBet={() => { setPreSelectedRoom(null); setFreeBetOpen(true) }}
             onOpenGambling={() => { setPreSelectedRoom(null); setGamblingOpen(true) }}
@@ -80,6 +84,9 @@ function GameInner() {
 
       {/* DevBuy notification toast */}
       <DevBuyToast />
+
+      {/* Chat sidebar - left side */}
+      <ChatSidebar />
     </main>
   )
 }
@@ -87,7 +94,9 @@ function GameInner() {
 export default function Home() {
   return (
     <GameProvider>
-      <GameInner />
+      <ChatProvider>
+        <GameInner />
+      </ChatProvider>
     </GameProvider>
   )
 }

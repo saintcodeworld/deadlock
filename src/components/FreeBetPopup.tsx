@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGame } from '@/context/GameContext'
-import { X, Gift, CheckCircle, AlertCircle } from 'lucide-react'
+import { X, Gift, CheckCircle, AlertCircle, Skull } from 'lucide-react'
 
 interface FreeBetPopupProps {
   isOpen: boolean
@@ -74,53 +74,63 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50 flex items-center justify-center font-display"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
+          {/* Backdrop - made solid dark instead of transparent */}
+          <div className="absolute inset-0 bg-[#050505]" onClick={handleClose} />
 
           {/* Modal */}
           <motion.div
-            className="relative w-[420px] max-w-[90vw] bg-gray-900 border border-emerald-500/30 rounded-2xl shadow-2xl overflow-hidden"
-            initial={{ scale: 0.9, y: 20 }}
+            className="relative w-[440px] max-w-[90vw] bg-[#0a0a0a] border border-[#222] shadow-[0_0_50px_rgba(138,3,3,0.15)] overflow-hidden uppercase tracking-wider"
+            initial={{ scale: 0.95, y: 10 }}
             animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.9, y: 20 }}
+            exit={{ scale: 0.95, y: 10 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 400 }}
           >
-            {/* Header — green theme for "free" */}
-            <div className="bg-gradient-to-r from-emerald-900/80 to-green-900/80 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Gift className="w-5 h-5 text-emerald-400" />
+            {/* Glitch line */}
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-red-900 opacity-50" />
+            <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none mix-blend-overlay" />
+
+            {/* Header */}
+            <div className="bg-[#111] border-b border-[#222] px-6 py-5 flex items-center justify-between relative z-10">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 border border-[#333] bg-[#0a0a0a] flex items-center justify-center">
+                  <Gift className="w-5 h-5 text-red-500" />
                 </div>
                 <div>
-                  <h2 className="text-white font-bold text-lg">Free Prediction</h2>
-                  <p className="text-emerald-300/70 text-xs">Guess right = 0.01 SOL dev buy</p>
+                  <h2 className="text-white font-bold text-lg tracking-[0.2em]">FREE GUESS</h2>
+                  <p className="text-gray-500 text-[10px] font-mono mt-1 tracking-widest lowercase">Survive for 0.01 SOL dev buy</p>
                 </div>
               </div>
-              <button onClick={handleClose} className="text-gray-400 hover:text-white transition-colors">
+              <button onClick={handleClose} className="text-gray-500 hover:text-white transition-colors hover:rotate-90 duration-300">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6">
-              {/* How it works — very clear for new users */}
-              <div className="bg-emerald-950/40 border border-emerald-500/20 rounded-xl p-4 mb-5">
-                <p className="text-emerald-300 text-sm font-medium mb-1">🎯 How it works:</p>
-                <p className="text-gray-400 text-xs leading-relaxed">
-                  Pick which room you think the killer will enter. <strong className="text-white">It&apos;s completely free</strong> — no SOL needed.
-                  If you guess correctly, <strong className="text-emerald-300">0.01 SOL</strong> automatically buys the token on pump.fun!
+            <div className="p-6 relative z-10">
+              {/* How it works */}
+              <div className="bg-[#0a0a0a] border border-[#222] p-4 mb-6 relative overflow-hidden group">
+                <div className="absolute left-0 top-0 w-1 h-full bg-[#333] group-hover:bg-red-900 transition-colors" />
+                <p className="text-red-500 text-xs font-bold tracking-widest mb-2 flex items-center gap-2">
+                  <Skull className="w-3.5 h-3.5" /> THE RULES:
                 </p>
-                <p className="text-gray-500 text-xs mt-2">⚡ One free prediction per round.</p>
+                <p className="text-gray-400 text-[10px] font-mono leading-relaxed lowercase">
+                  Select a room. It costs nothing.
+                  If the killer targets your room and you survive, <strong className="text-white">0.01 SOL</strong> automatically buys the token.
+                </p>
+                <p className="text-white text-[9px] font-mono mt-3 uppercase tracking-widest border-t border-[#333] pt-2">
+                  One prediction per round.
+                </p>
               </div>
 
               {/* Already bet state */}
               {alreadyBet && (
-                <div className="flex items-center gap-2 bg-blue-950/40 border border-blue-500/20 rounded-lg p-3 mb-4">
-                  <CheckCircle className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                  <span className="text-blue-300 text-sm">You already placed your free prediction this round!</span>
+                <div className="flex items-center gap-3 bg-[#111] border border-[#333] p-4 mb-5">
+                  <CheckCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                  <span className="text-white text-xs tracking-widest">FATE ALREADY SEALED THIS ROUND.</span>
                 </div>
               )}
 
@@ -129,10 +139,10 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/30 rounded-lg p-3 mb-4"
+                  className="flex items-center gap-3 bg-[#111] border border-red-900 p-4 mb-5 shadow-[0_0_15px_rgba(138,3,3,0.2)]"
                 >
-                  <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  <span className="text-emerald-300 text-sm font-medium">Prediction placed! Good luck 🍀</span>
+                  <Skull className="w-4 h-4 text-red-500 flex-shrink-0 animate-pulse" />
+                  <span className="text-white text-xs font-bold tracking-widest">PREDICTION LOGGED. PRAY.</span>
                 </motion.div>
               )}
 
@@ -141,20 +151,22 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
                 <>
                   {preSelectedRoom ? (
                     <>
-                      {/* Show pre-selected room info */}
                       {(() => {
                         const room = rooms.find(r => r.id === preSelectedRoom)
                         const freeCount = room ? getFreeBetCountForRoom(room.id) : 0
                         return room ? (
-                          <div className="mb-5 p-4 rounded-xl border border-emerald-400 bg-emerald-500/10 ring-1 ring-emerald-400/50">
-                            <div className="flex items-center gap-3">
-                              <span className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center text-sm font-bold">
+                          <div className="mb-6 p-4 border border-[#333] bg-[#111] relative overflow-hidden">
+                            <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.02] mix-blend-overlay" />
+                            <div className="flex items-center gap-4 relative z-10">
+                              <span className="w-10 h-10 border border-[#444] bg-[#0a0a0a] text-red-500 flex items-center justify-center text-sm font-bold font-mono">
                                 {room.id}
                               </span>
                               <div>
-                                <p className="text-emerald-300 font-bold text-sm">{room.name}</p>
+                                <p className="text-white font-bold text-sm tracking-wider">{room.name}</p>
                                 {freeCount > 0 && (
-                                  <p className="text-gray-400 text-[10px] font-mono">{freeCount} prediction{freeCount > 1 ? 's' : ''} already</p>
+                                  <p className="text-gray-500 text-[10px] font-mono mt-1 lowercase flex items-center gap-1">
+                                    <Skull className="w-2.5 h-2.5" /> {freeCount} souls hiding here
+                                  </p>
                                 )}
                               </div>
                             </div>
@@ -162,26 +174,24 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
                         ) : null
                       })()}
 
-                      {/* Confirm button */}
                       <button
                         onClick={handlePlaceBet}
                         disabled={gamePhase !== 'betting'}
-                        className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
+                        className={`w-full py-4 font-bold text-xs tracking-[0.2em] transition-all duration-300 relative overflow-hidden group ${
                           gamePhase === 'betting'
-                            ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-400 hover:to-green-400 shadow-lg shadow-emerald-500/20'
-                            : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            ? 'bg-[#111] text-red-500 border border-red-900 hover:bg-red-950/20 hover:shadow-[0_0_20px_rgba(138,3,3,0.2)]'
+                            : 'bg-[#0a0a0a] border border-[#222] text-gray-600 cursor-not-allowed'
                         }`}
                       >
                         {gamePhase !== 'betting'
-                          ? 'Betting Phase Ended'
-                          : `🎯 Confirm Free Prediction — Room #${preSelectedRoom}`}
+                          ? 'TIME IS UP'
+                          : `CONFIRM FATE — ROOM #${preSelectedRoom}`}
                       </button>
                     </>
                   ) : (
                     <>
-                      {/* Room selection grid (only when opened from sidebar without pre-selection) */}
-                      <p className="text-gray-400 text-xs font-mono mb-3 uppercase tracking-wider">Select a room:</p>
-                      <div className="grid grid-cols-2 gap-2 mb-5">
+                      <p className="text-gray-500 text-[10px] font-mono mb-4 uppercase tracking-[0.2em]">Select your hiding spot:</p>
+                      <div className="grid grid-cols-2 gap-3 mb-6">
                         {bettableRooms.map(room => {
                           const freeCount = getFreeBetCountForRoom(room.id)
                           const isSelected = selectedRoom === room.id
@@ -189,25 +199,25 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
                             <button
                               key={room.id}
                               onClick={() => setSelectedRoom(room.id)}
-                              className={`relative p-3 rounded-lg border text-left transition-all ${
+                              className={`relative p-3 border text-left transition-all duration-300 group ${
                                 isSelected
-                                  ? 'border-emerald-400 bg-emerald-500/10 ring-1 ring-emerald-400/50'
-                                  : 'border-gray-700 bg-gray-800/50 hover:border-gray-500 hover:bg-gray-800'
+                                  ? 'border-red-900 bg-[#111] shadow-[inset_0_0_15px_rgba(138,3,3,0.1)]'
+                                  : 'border-[#222] bg-[#0a0a0a] hover:border-[#444] hover:bg-[#111]'
                               }`}
                             >
-                              <div className="flex items-center gap-2">
-                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                                  isSelected ? 'bg-emerald-500 text-white' : 'bg-gray-700 text-gray-300'
+                              <div className="flex items-center gap-3">
+                                <span className={`w-6 h-6 flex items-center justify-center text-[10px] font-bold font-mono border ${
+                                  isSelected ? 'border-red-900 text-red-500 bg-[#0a0a0a]' : 'border-[#333] text-gray-500'
                                 }`}>
                                   {room.id}
                                 </span>
-                                <span className={`text-sm font-medium ${isSelected ? 'text-emerald-300' : 'text-gray-300'}`}>
+                                <span className={`text-xs font-bold tracking-wider ${isSelected ? 'text-white' : 'text-gray-400 group-hover:text-white'}`}>
                                   {room.name}
                                 </span>
                               </div>
                               {freeCount > 0 && (
-                                <span className="absolute top-2 right-2 text-[10px] text-gray-500 font-mono">
-                                  {freeCount} pred
+                                <span className="absolute top-2 right-2 text-[9px] text-gray-500 font-mono flex items-center gap-1">
+                                  {freeCount} <Skull className="w-2 h-2" />
                                 </span>
                               )}
                             </button>
@@ -215,21 +225,20 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
                         })}
                       </div>
 
-                      {/* Confirm button */}
                       <button
                         onClick={handlePlaceBet}
                         disabled={!selectedRoom || gamePhase !== 'betting'}
-                        className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
+                        className={`w-full py-4 font-bold text-xs tracking-[0.2em] transition-all duration-300 relative overflow-hidden group ${
                           selectedRoom && gamePhase === 'betting'
-                            ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-400 hover:to-green-400 shadow-lg shadow-emerald-500/20'
-                            : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            ? 'bg-[#111] text-red-500 border border-red-900 hover:bg-red-950/20 hover:shadow-[0_0_20px_rgba(138,3,3,0.2)]'
+                            : 'bg-[#0a0a0a] border border-[#222] text-gray-600 cursor-not-allowed'
                         }`}
                       >
                         {gamePhase !== 'betting'
-                          ? 'Betting Phase Ended'
+                          ? 'TIME IS UP'
                           : !selectedRoom
-                          ? 'Select a Room'
-                          : '🎯 Place Free Prediction'}
+                          ? 'CHOOSE A ROOM'
+                          : 'CONFIRM FATE'}
                       </button>
                     </>
                   )}
@@ -237,9 +246,9 @@ export function FreeBetPopup({ isOpen, onClose, preSelectedRoom }: FreeBetPopupP
               )}
 
               {status === 'already' && (
-                <div className="flex items-center gap-2 bg-yellow-950/40 border border-yellow-500/20 rounded-lg p-3 mt-3">
-                  <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                  <span className="text-yellow-300 text-xs">Only 1 free prediction per round.</span>
+                <div className="flex items-center gap-3 bg-[#0a0a0a] border border-[#333] p-4 mt-4">
+                  <AlertCircle className="w-4 h-4 text-white flex-shrink-0" />
+                  <span className="text-white text-[10px] font-mono tracking-widest">ONE GUESS PER NIGHTMARE.</span>
                 </div>
               )}
             </div>

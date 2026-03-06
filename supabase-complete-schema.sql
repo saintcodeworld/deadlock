@@ -200,6 +200,39 @@ ALTER PUBLICATION supabase_realtime ADD TABLE bets;
 ALTER PUBLICATION supabase_realtime ADD TABLE player_positions;
 
 -- ============================================================
+-- TABLE: chat_messages
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  sender_id TEXT NOT NULL,
+  sender_name TEXT NOT NULL DEFAULT 'Anon',
+  message TEXT NOT NULL CHECK (char_length(message) <= 500),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for ordering by time
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at DESC);
+
+-- Enable RLS
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies to avoid conflicts on re-run
+DROP POLICY IF EXISTS "Allow all to read chat messages" ON chat_messages;
+DROP POLICY IF EXISTS "Allow all to insert chat messages" ON chat_messages;
+
+-- Policies: anyone can read and send
+CREATE POLICY "Allow all to read chat messages"
+  ON chat_messages FOR SELECT
+  USING (true);
+
+CREATE POLICY "Allow all to insert chat messages"
+  ON chat_messages FOR INSERT
+  WITH CHECK (true);
+
+-- Enable realtime for chat
+ALTER PUBLICATION supabase_realtime ADD TABLE chat_messages;
+
+-- ============================================================
 -- DONE!
 -- ============================================================
 -- Your database is now ready for the DEADLOCK game
