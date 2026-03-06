@@ -126,7 +126,7 @@ const KILL_DURATION = 4000
 const RESULT_DISPLAY_DURATION = 8000
 const FREE_BET_DEVBUY = 0.01
 const MASTER_HEARTBEAT_INTERVAL = 5000
-const MASTER_STALE_THRESHOLD = 15000
+const MASTER_STALE_THRESHOLD = 8000
 
 // Generate a unique client ID per browser tab
 function getClientId(): string {
@@ -157,6 +157,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
   const [playerPositions, setPlayerPositions] = useState<PlayerPosition[]>([])
   const [isGameMaster, setIsGameMaster] = useState(false)
+  const [bettingEndsAt, setBettingEndsAt] = useState<number | null>(null)
 
   const knockTimerRef = useRef<NodeJS.Timeout | null>(null)
   const patrolTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -168,9 +169,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
   const clientIdRef = useRef<string>('')
   const sessionIdRef = useRef<string | null>(null)
+  const currentRoundRef = useRef(1)
 
-  // Keep sessionIdRef in sync for use in intervals/timeouts
+  // Keep refs in sync for use in intervals/timeouts
   useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+  useEffect(() => { currentRoundRef.current = currentRound }, [currentRound])
 
   const getRoomCenter = useCallback((roomId: number) => {
     const room = BETTABLE_ROOMS.find(r => r.id === roomId)
@@ -330,7 +333,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     const newPhase = session.game_phase
     setGamePhase(newPhase)
-    setRoundTimeRemaining(session.round_time_remaining)
     setKillerPosition({ x: Number(session.killer_position_x), y: Number(session.killer_position_y) })
     setKillerTargetRoom(session.killer_target_room)
     setKillerKnockingRoom(session.killer_knocking_room)
@@ -339,6 +341,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setKnockIndex(session.knock_index || 0)
     setIsKilling(session.is_killing || false)
     setCurrentRound(session.round_number)
+
+    // Sync betting_ends_at so follower timer derives from same absolute timestamp
+    if (session.betting_ends_at) {
+      setBettingEndsAt(new Date(session.betting_ends_at).getTime())
+    }
+
+    // For non-betting phases, keep round_time_remaining from server
+    if (newPhase !== 'betting') {
+      setRoundTimeRemaining(session.round_time_remaining)
+    }
 
     // When master resets to a new betting round, followers must also reset local bets/rooms
     if (newPhase === 'betting' && session.round_time_remaining >= 55) {
@@ -374,6 +386,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setKnockSequence(data.session.knock_sequence || [])
           setKnockIndex(data.session.knock_index || 0)
           setIsKilling(data.session.is_killing || false)
+
+          // Set betting_ends_at for timer sync
+          if (data.session.betting_ends_at) {
+            setBettingEndsAt(new Date(data.session.betting_ends_at).getTime())
+          }
 
           // Load existing bets
           try {
@@ -568,46 +585,40 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [gamePhase, sessionId, isGameMaster, updateSessionOnServer])
 
   // ============================================================
-  // GAME MASTER LOGIC: BETTING TIMER
+  // UNIVERSAL BETTING TIMER — runs on ALL clients (master + followers)
+  // All clients compute remaining time from the same absolute betting_ends_at
+  // timestamp so everyone's timer is perfectly in sync.
+  // Only the game master triggers the phase transition when time hits 0.
   // ============================================================
   useEffect(() => {
     if (gamePhase !== 'betting') return
-    if (!isGameMasterRef.current) return
-    if (!sessionId) return
+    if (!bettingEndsAt) return
 
-    console.log('[Multiplayer] ⏱️ Starting betting timer (master)')
+    const calcRemaining = () => Math.max(0, Math.ceil((bettingEndsAt - Date.now()) / 1000))
 
-    const timer = setInterval(() => {
-      setRoundTimeRemaining(prev => {
-        const newTime = prev - 1
+    // Set immediately so there's no 500ms delay on first render
+    setRoundTimeRemaining(calcRemaining())
 
-        if (newTime <= 0) {
-          clearInterval(timer)
+    const tick = setInterval(() => {
+      const remaining = calcRemaining()
+      setRoundTimeRemaining(remaining)
+
+      if (remaining <= 0) {
+        clearInterval(tick)
+        // Only the game master drives the phase transition
+        if (isGameMasterRef.current) {
           console.log('[Multiplayer] ⏱️ Timer done → knocking')
-          // Use ref for rooms snapshot to avoid stale closure
-          roomsSnapshotRef.current = roomsSnapshotRef.current
           setGamePhase('knocking')
           const sid = sessionIdRef.current
           if (sid) {
             updateSessionOnServer(sid, { game_phase: 'knocking', round_time_remaining: 0 })
           }
-          return 0
         }
+      }
+    }, 500)
 
-        // Sync timer every 5 seconds
-        if (newTime % 5 === 0) {
-          const sid = sessionIdRef.current
-          if (sid) {
-            updateSessionOnServer(sid, { round_time_remaining: newTime })
-          }
-        }
-
-        return newTime
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [gamePhase, sessionId, isGameMaster, updateSessionOnServer])
+    return () => clearInterval(tick)
+  }, [gamePhase, bettingEndsAt, updateSessionOnServer])
 
   // ============================================================
   // GAME MASTER LOGIC: KNOCKING INIT
@@ -883,12 +894,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (gamePhase !== 'betting') return
     if (!sessionId) return
 
+    // Expire betting_ends_at so universal timer fires immediately on all clients
+    const expiredAt = new Date(Date.now() - 1000).toISOString()
+    setBettingEndsAt(Date.now() - 1000)
     setRoundTimeRemaining(0)
     setGamePhase('knocking')
 
     await updateSessionOnServer(sessionId, {
       game_phase: 'knocking',
-      round_time_remaining: 0
+      round_time_remaining: 0,
+      betting_ends_at: expiredAt
     })
   }, [gamePhase, sessionId, updateSessionOnServer])
 
@@ -902,35 +917,33 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('bets').delete().eq('session_id', sessionId)
     await supabase.from('player_positions').delete().eq('session_id', sessionId)
 
-    // Use functional updater to get current round without needing it in deps
-    setCurrentRound(prev => {
-      const nextRound = prev + 1
+    // Compute new round number and absolute betting end time
+    const nextRound = currentRoundRef.current + 1
+    const newBettingEndsAt = Date.now() + BETTING_DURATION * 1000
 
-      // Reset session state
-      const updates = {
-        round_number: nextRound,
-        game_phase: 'betting' as const,
-        round_time_remaining: BETTING_DURATION,
-        killer_position_x: HALLWAY_CENTER.x,
-        killer_position_y: HALLWAY_CENTER.y,
-        killer_target_room: null,
-        killer_knocking_room: null,
-        killer_kill_room: null,
-        knock_sequence: [] as number[],
-        knock_index: 0,
-        is_killing: false,
-        game_master_id: clientIdRef.current,
-        game_master_last_seen: new Date().toISOString()
-      }
-
-      updateSessionOnServer(sessionId, updates)
-
-      return nextRound
+    // Push new state to server — betting_ends_at is the authoritative timer source
+    await updateSessionOnServer(sessionId, {
+      round_number: nextRound,
+      game_phase: 'betting' as const,
+      round_time_remaining: BETTING_DURATION,
+      betting_ends_at: new Date(newBettingEndsAt).toISOString(),
+      killer_position_x: HALLWAY_CENTER.x,
+      killer_position_y: HALLWAY_CENTER.y,
+      killer_target_room: null,
+      killer_knocking_room: null,
+      killer_kill_room: null,
+      knock_sequence: [] as number[],
+      knock_index: 0,
+      is_killing: false,
+      game_master_id: clientIdRef.current,
+      game_master_last_seen: new Date().toISOString()
     })
 
     // Update local state
     isGameMasterRef.current = true
     setIsGameMaster(true)
+    setCurrentRound(nextRound)
+    setBettingEndsAt(newBettingEndsAt)
     setRooms(buildInitialRooms())
     setRoundTimeRemaining(BETTING_DURATION)
     setGamePhase('betting')
