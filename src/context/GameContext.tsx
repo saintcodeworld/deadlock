@@ -347,6 +347,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // Sync betting_ends_at so follower timer derives from same absolute timestamp
     if (session.betting_ends_at) {
       setBettingEndsAt(new Date(session.betting_ends_at).getTime())
+    } else if (newPhase === 'betting' && session.round_time_remaining > 0) {
+      // Fallback: old sessions without betting_ends_at — compute from remaining time
+      setBettingEndsAt(Date.now() + session.round_time_remaining * 1000)
     }
 
     // For non-betting phases, keep round_time_remaining from server
@@ -392,6 +395,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           // Set betting_ends_at for timer sync
           if (data.session.betting_ends_at) {
             setBettingEndsAt(new Date(data.session.betting_ends_at).getTime())
+          } else if (data.session.game_phase === 'betting' && data.session.round_time_remaining > 0) {
+            // Fallback: old sessions without betting_ends_at — compute from remaining time
+            const computed = Date.now() + data.session.round_time_remaining * 1000
+            setBettingEndsAt(computed)
           }
 
           // Load existing bets
@@ -588,6 +595,33 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     return () => { if (patrolTimerRef.current) clearTimeout(patrolTimerRef.current) }
   }, [gamePhase, sessionId, isGameMaster, updateSessionOnServer])
+
+  // ============================================================
+  // SAFETY NET: If master is in betting phase but bettingEndsAt is
+  // missing or already expired (0:00 stuck), force knocking immediately.
+  // ============================================================
+  useEffect(() => {
+    if (gamePhase !== 'betting') return
+    if (!isGameMasterRef.current) return
+    if (!sessionId) return
+
+    // If bettingEndsAt is null (legacy session) or already in the past, transition now
+    if (!bettingEndsAt || bettingEndsAt <= Date.now()) {
+      const safetyTimeout = setTimeout(() => {
+        // Double-check we're still in betting and still master
+        if (isGameMasterRef.current) {
+          console.log('[Multiplayer] ⚠️ Safety net: betting stuck at 0:00, forcing → knocking')
+          setGamePhase('knocking')
+          setRoundTimeRemaining(0)
+          const sid = sessionIdRef.current
+          if (sid) {
+            updateSessionOnServer(sid, { game_phase: 'knocking', round_time_remaining: 0 })
+          }
+        }
+      }, 1500) // Small delay to let normal flow take over if possible
+      return () => clearTimeout(safetyTimeout)
+    }
+  }, [gamePhase, bettingEndsAt, sessionId, isGameMaster, updateSessionOnServer])
 
   // ============================================================
   // UNIVERSAL BETTING TIMER — runs on ALL clients (master + followers)
