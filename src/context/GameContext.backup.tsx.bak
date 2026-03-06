@@ -1,0 +1,481 @@
+'use client'
+
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { triggerServerDevBuy } from '@/utils/devbuy'
+
+// ── Bet types ──────────────────────────────────────────────
+
+export interface FreeBet {
+  walletAddress: string
+  roomId: number
+  timestamp: number
+}
+
+export interface GamblingBet {
+  walletAddress: string
+  roomId: number
+  amount: number
+  timestamp: number
+}
+
+export interface Room {
+  id: number
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  freeBets: FreeBet[]
+  gamblingBets: GamblingBet[]
+}
+
+export type GamePhase = 'betting' | 'knocking' | 'killing' | 'result'
+
+export interface DoorPosition {
+  roomId: number
+  x: number
+  y: number
+}
+
+// ── Round result (computed once on result phase) ──────────
+
+export interface RoundResult {
+  killedRoom: number
+  totalPot: number
+  winnersExist: boolean
+  // Per-wallet payouts for gambling (empty if no winners → devbuy)
+  payouts: { wallet: string; amount: number; betAmount: number }[]
+  // Free bet correct guessers (each triggers 0.01 SOL devbuy)
+  correctFreeBets: string[] // wallet addresses
+  devBuyAmount: number // total SOL going to devbuy this round
+}
+
+// ── State ─────────────────────────────────────────────────
+
+interface GameState {
+  rooms: Room[]
+  killerPosition: { x: number; y: number }
+  killerTargetRoom: number | null
+  killerKnockingRoom: number | null
+  killerKillRoom: number | null
+  currentRound: number
+  roundTimeRemaining: number
+  gamePhase: GamePhase
+  selectedRoom: number | null
+  isKilling: boolean
+  knockSequence: number[]
+  knockIndex: number
+  roundResult: RoundResult | null
+}
+
+interface GameContextType extends GameState {
+  placeFreeBet: (roomId: number, walletAddress: string) => boolean
+  placeGamblingBet: (roomId: number, amount: number, walletAddress: string) => void
+  selectRoom: (roomId: number | null) => void
+  startNewRound: () => void
+  skipBettingTimer: () => void
+  getTotalGamblingBetsForRoom: (roomId: number) => number
+  getFreeBetCountForRoom: (roomId: number) => number
+  getTotalPot: () => number
+  hasPlacedFreeBet: (walletAddress: string) => boolean
+  getMyGamblingBets: (walletAddress: string) => GamblingBet[]
+  getRoomsWithBets: () => number[]
+}
+
+// ── Constants ─────────────────────────────────────────────
+
+// All bettable rooms (no hallway entity — hallway is just visual)
+const BETTABLE_ROOMS: Room[] = [
+  { id: 1, name: 'Master Bedroom', x: 40, y: 40, width: 220, height: 180, freeBets: [], gamblingBets: [] },
+  { id: 2, name: 'Bedroom 2', x: 40, y: 240, width: 180, height: 160, freeBets: [], gamblingBets: [] },
+  { id: 3, name: 'Bedroom 3', x: 40, y: 420, width: 180, height: 140, freeBets: [], gamblingBets: [] },
+  { id: 4, name: 'Study', x: 500, y: 40, width: 180, height: 160, freeBets: [], gamblingBets: [] },
+  { id: 5, name: 'Master Bath', x: 280, y: 40, width: 200, height: 130, freeBets: [], gamblingBets: [] },
+  { id: 6, name: 'Bathroom 2', x: 500, y: 220, width: 180, height: 120, freeBets: [], gamblingBets: [] },
+  { id: 7, name: 'Kitchen', x: 500, y: 360, width: 180, height: 200, freeBets: [], gamblingBets: [] },
+]
+
+const buildInitialRooms = (): Room[] => [
+  ...BETTABLE_ROOMS.map(r => ({ ...r, freeBets: [], gamblingBets: [] })),
+]
+
+const doorPositions: DoorPosition[] = [
+  { roomId: 1, x: 268, y: 120 },
+  { roomId: 2, x: 228, y: 310 },
+  { roomId: 3, x: 228, y: 480 },
+  { roomId: 4, x: 480, y: 120 },
+  { roomId: 5, x: 360, y: 178 },
+  { roomId: 6, x: 480, y: 278 },
+  { roomId: 7, x: 480, y: 450 },
+]
+
+// Hallway patrol waypoints — killer walks between these during betting
+const HALLWAY_WAYPOINTS = [
+  { x: 360, y: 220 },
+  { x: 360, y: 375 },
+  { x: 360, y: 520 },
+  { x: 300, y: 375 },
+  { x: 420, y: 300 },
+  { x: 360, y: 220 },
+]
+const HALLWAY_CENTER = { x: 360, y: 375 }
+
+const BETTING_DURATION = 60
+const KNOCK_DURATION = 3000
+const KILL_DURATION = 4000
+const RESULT_DISPLAY_DURATION = 8000 // Show results for 8 seconds before auto-restart
+const FREE_BET_DEVBUY = 0.01 // SOL per correct free bet
+
+const DEV_WALLET = process.env.NEXT_PUBLIC_DEV_WALLET || ''
+
+// ── Context ───────────────────────────────────────────────
+
+const GameContext = createContext<GameContextType | undefined>(undefined)
+
+export function GameProvider({ children }: { children: React.ReactNode }) {
+  const [rooms, setRooms] = useState<Room[]>(buildInitialRooms())
+  const [killerPosition, setKillerPosition] = useState(HALLWAY_CENTER)
+  const [killerTargetRoom, setKillerTargetRoom] = useState<number | null>(null)
+  const [killerKnockingRoom, setKillerKnockingRoom] = useState<number | null>(null)
+  const [killerKillRoom, setKillerKillRoom] = useState<number | null>(null)
+  const [currentRound, setCurrentRound] = useState(1)
+  const [roundTimeRemaining, setRoundTimeRemaining] = useState(BETTING_DURATION)
+  const [gamePhase, setGamePhase] = useState<GamePhase>('betting')
+  const [selectedRoom, setSelectedRoom] = useState<number | null>(null)
+  const [isKilling, setIsKilling] = useState(false)
+  const [knockSequence, setKnockSequence] = useState<number[]>([])
+  const [knockIndex, setKnockIndex] = useState(0)
+  const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
+  const knockTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const patrolTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const patrolIndexRef = useRef(0)
+
+  // ── Helpers ──
+
+  const getRoomCenter = useCallback((roomId: number) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) return HALLWAY_CENTER
+    return { x: room.x + room.width / 2, y: room.y + room.height / 2 }
+  }, [rooms])
+
+  const getRoomsWithBets = useCallback(() => {
+    return rooms.filter(r => r.freeBets.length > 0 || r.gamblingBets.length > 0).map(r => r.id)
+  }, [rooms])
+
+  const getTotalGamblingBetsForRoom = useCallback((roomId: number) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) return 0
+    return room.gamblingBets.reduce((sum, b) => sum + b.amount, 0)
+  }, [rooms])
+
+  const getFreeBetCountForRoom = useCallback((roomId: number) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) return 0
+    return room.freeBets.length
+  }, [rooms])
+
+  const getTotalPot = useCallback(() => {
+    return rooms.reduce((sum, r) => sum + r.gamblingBets.reduce((s, b) => s + b.amount, 0), 0)
+  }, [rooms])
+
+  const hasPlacedFreeBet = useCallback((walletAddress: string) => {
+    return rooms.some(r => r.freeBets.some(b => b.walletAddress === walletAddress))
+  }, [rooms])
+
+  const getMyGamblingBets = useCallback((walletAddress: string) => {
+    const bets: GamblingBet[] = []
+    rooms.forEach(r => r.gamblingBets.forEach(b => {
+      if (b.walletAddress === walletAddress) bets.push(b)
+    }))
+    return bets
+  }, [rooms])
+
+  // ── Killer hallway patrol during betting ──
+
+  useEffect(() => {
+    if (gamePhase !== 'betting') return
+    patrolIndexRef.current = 0
+    setKillerPosition(HALLWAY_WAYPOINTS[0])
+
+    const patrol = () => {
+      patrolIndexRef.current = (patrolIndexRef.current + 1) % HALLWAY_WAYPOINTS.length
+      setKillerPosition(HALLWAY_WAYPOINTS[patrolIndexRef.current])
+      patrolTimerRef.current = setTimeout(patrol, 2500 + Math.random() * 1500)
+    }
+    patrolTimerRef.current = setTimeout(patrol, 2500)
+
+    return () => { if (patrolTimerRef.current) clearTimeout(patrolTimerRef.current) }
+  }, [gamePhase])
+
+  // ── Betting timer ──
+
+  useEffect(() => {
+    if (gamePhase !== 'betting') return
+    const timer = setInterval(() => {
+      setRoundTimeRemaining(prev => {
+        if (prev <= 1) {
+          setGamePhase('knocking')
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [gamePhase])
+
+  // ── Knocking phase ──
+
+  useEffect(() => {
+    if (gamePhase !== 'knocking') return
+    const shuffled = [1, 2, 3, 4, 5, 6, 7].sort(() => Math.random() - 0.5)
+    setKnockSequence(shuffled)
+    setKnockIndex(0)
+    setKillerKnockingRoom(null)
+    return () => { if (knockTimerRef.current) clearTimeout(knockTimerRef.current) }
+  }, [gamePhase])
+
+  useEffect(() => {
+    if (gamePhase !== 'knocking') return
+    if (knockSequence.length === 0) return
+
+    if (knockIndex >= knockSequence.length) {
+      // Pick kill target — random from bettable rooms (truly random, not biased)
+      const targetId = BETTABLE_ROOMS[Math.floor(Math.random() * BETTABLE_ROOMS.length)].id
+      setKillerKnockingRoom(null)
+      setKillerKillRoom(targetId)
+      setKillerPosition(getRoomCenter(targetId))
+      setKillerTargetRoom(targetId)
+      setGamePhase('killing')
+      return
+    }
+
+    const currentRoomId = knockSequence[knockIndex]
+    const doorPos = doorPositions.find(d => d.roomId === currentRoomId)
+    if (doorPos) {
+      setKillerPosition({ x: doorPos.x, y: doorPos.y })
+      setKillerKnockingRoom(currentRoomId)
+      setKillerTargetRoom(null)
+    }
+
+    knockTimerRef.current = setTimeout(() => {
+      setKnockIndex(prev => prev + 1)
+    }, KNOCK_DURATION)
+
+    return () => { if (knockTimerRef.current) clearTimeout(knockTimerRef.current) }
+  }, [gamePhase, knockIndex, knockSequence, getRoomCenter])
+
+  // ── Killing phase ──
+
+  useEffect(() => {
+    if (gamePhase !== 'killing') return
+    setIsKilling(true)
+    const killTimer = setTimeout(() => {
+      setIsKilling(false)
+      setGamePhase('result')
+    }, KILL_DURATION)
+    return () => clearTimeout(killTimer)
+  }, [gamePhase])
+
+  // ── Result phase: compute payouts ──
+  // Snapshot rooms continuously during betting so we always have the latest bets.
+  // Once betting ends, this snapshot is frozen and used in the result phase.
+  const roomsSnapshotRef = useRef<Room[]>(rooms)
+  const resultProcessedRef = useRef(false)
+
+  useEffect(() => {
+    // Keep snapshot up to date during betting phase (captures all bets)
+    if (gamePhase === 'betting') {
+      roomsSnapshotRef.current = rooms
+    }
+  }, [gamePhase, rooms])
+
+  // Reset the processed guard when a new round starts
+  useEffect(() => {
+    if (gamePhase === 'betting') {
+      resultProcessedRef.current = false
+    }
+  }, [gamePhase])
+
+  useEffect(() => {
+    if (gamePhase !== 'result') return
+    if (killerKillRoom === null) return
+    if (resultProcessedRef.current) return // already processed this round
+    resultProcessedRef.current = true
+
+    // Use the snapshot taken during betting, not current rooms (which may reset)
+    const snapshotRooms = roomsSnapshotRef.current
+
+    const killedRoom = killerKillRoom
+    const allGamblingBets: GamblingBet[] = []
+    snapshotRooms.forEach(r => r.gamblingBets.forEach(b => allGamblingBets.push(b)))
+
+    const totalPot = allGamblingBets.reduce((s, b) => s + b.amount, 0)
+    const winningBets = allGamblingBets.filter(b => b.roomId === killedRoom)
+    const winningTotal = winningBets.reduce((s, b) => s + b.amount, 0)
+
+    // Free bet correct guessers
+    const killedRoomData = snapshotRooms.find(r => r.id === killedRoom)
+    const correctFreeBets = killedRoomData ? killedRoomData.freeBets.map(b => b.walletAddress) : []
+
+    console.log(`[Game] 🔍 Result phase — killed room: ${killedRoom}`)
+    console.log(`[Game] 🔍 Snapshot rooms bets:`, snapshotRooms.map(r => ({ id: r.id, name: r.name, freeBets: r.freeBets.length, gamblingBets: r.gamblingBets.length })))
+    console.log(`[Game] 🔍 Killed room free bets: ${correctFreeBets.length}`, correctFreeBets)
+    console.log(`[Game] 🔍 Total gambling pot: ${totalPot}, winning total: ${winningTotal}`)
+
+    let payouts: RoundResult['payouts'] = []
+    let devBuyAmount = correctFreeBets.length * FREE_BET_DEVBUY
+
+    if (winningTotal > 0 && totalPot > 0) {
+      // Winners exist → distribute total pot proportionally
+      payouts = winningBets.map(b => ({
+        wallet: b.walletAddress,
+        amount: (b.amount / winningTotal) * totalPot,
+        betAmount: b.amount,
+      }))
+    } else if (totalPot > 0) {
+      // No winners → all money to devbuy
+      devBuyAmount += totalPot
+    }
+
+    console.log(`[Game] 🔍 devBuyAmount: ${devBuyAmount} SOL`)
+
+    const result: RoundResult = {
+      killedRoom,
+      totalPot,
+      winnersExist: winningTotal > 0,
+      payouts,
+      correctFreeBets,
+      devBuyAmount,
+    }
+    setRoundResult(result)
+
+    // Execute actual devbuy on-chain if there's an amount to buy
+    if (devBuyAmount > 0) {
+      console.log(`[Game] 🚀 Triggering devbuy of ${devBuyAmount} SOL...`)
+      console.log(`[Game] 🚀 Calling triggerServerDevBuy function now...`)
+      triggerServerDevBuy(devBuyAmount)
+        .then(res => {
+          console.log(`[Game] 📥 Devbuy response received:`, res)
+          if (res.success) {
+            console.log(`[Game] ✅ Devbuy of ${devBuyAmount} SOL executed. TX: ${res.signature}`)
+            console.log(`[Game] ✅ View TX: https://solscan.io/tx/${res.signature}`)
+          } else {
+            console.error(`[Game] ❌ Devbuy failed: ${res.error}`)
+            alert(`Devbuy failed: ${res.error}`)
+          }
+        })
+        .catch(err => {
+          console.error(`[Game] ❌ Devbuy promise rejected:`, err)
+          alert(`Devbuy error: ${err?.message || err}`)
+        })
+    } else {
+      console.log(`[Game] ⚠️ No devbuy — devBuyAmount is 0 (no correct free bets, no unclaimed pot)`)
+    }
+  }, [gamePhase, killerKillRoom])
+
+  // ── Actions ──
+
+  const placeFreeBet = useCallback((roomId: number, walletAddress: string): boolean => {
+    if (gamePhase !== 'betting') return false
+
+    // Check if this wallet already placed a free bet this round
+    const alreadyBet = rooms.some(r => r.freeBets.some(b => b.walletAddress === walletAddress))
+    if (alreadyBet) return false
+
+    const newBet: FreeBet = { walletAddress, roomId, timestamp: Date.now() }
+    setRooms(prev => prev.map(room =>
+      room.id === roomId ? { ...room, freeBets: [...room.freeBets, newBet] } : room
+    ))
+    return true
+  }, [gamePhase, rooms])
+
+  const placeGamblingBet = useCallback((roomId: number, amount: number, walletAddress: string) => {
+    if (gamePhase !== 'betting') return
+    if (amount <= 0) return
+
+    const newBet: GamblingBet = { walletAddress, roomId, amount, timestamp: Date.now() }
+    setRooms(prev => prev.map(room =>
+      room.id === roomId ? { ...room, gamblingBets: [...room.gamblingBets, newBet] } : room
+    ))
+  }, [gamePhase])
+
+  const selectRoom = useCallback((roomId: number | null) => {
+    if (gamePhase !== 'betting') return
+    setSelectedRoom(roomId)
+  }, [gamePhase])
+
+  const skipBettingTimer = useCallback(() => {
+    if (gamePhase !== 'betting') return
+    // Snapshot rooms NOW before transitioning
+    roomsSnapshotRef.current = rooms
+    console.log('[Game] ⏩ Skipping betting timer. Bets snapshot:', rooms.map(r => ({ id: r.id, freeBets: r.freeBets.length, gamblingBets: r.gamblingBets.length })))
+    setRoundTimeRemaining(0)
+    setGamePhase('knocking')
+  }, [gamePhase, rooms])
+
+  const startNewRound = useCallback(() => {
+    setRooms(buildInitialRooms())
+    setCurrentRound(prev => prev + 1)
+    setRoundTimeRemaining(BETTING_DURATION)
+    setGamePhase('betting')
+    setKillerTargetRoom(null)
+    setKillerPosition(HALLWAY_CENTER)
+    setKillerKnockingRoom(null)
+    setKillerKillRoom(null)
+    setIsKilling(false)
+    setSelectedRoom(null)
+    setKnockSequence([])
+    setKnockIndex(0)
+    setRoundResult(null)
+  }, [])
+
+  // ── Auto-restart after result display ──
+
+  useEffect(() => {
+    if (gamePhase !== 'result') return
+    if (!roundResult) return
+    const restartTimer = setTimeout(() => {
+      startNewRound()
+    }, RESULT_DISPLAY_DURATION)
+    return () => clearTimeout(restartTimer)
+  }, [gamePhase, roundResult, startNewRound])
+
+  return (
+    <GameContext.Provider value={{
+      rooms,
+      killerPosition,
+      killerTargetRoom,
+      killerKnockingRoom,
+      killerKillRoom,
+      currentRound,
+      roundTimeRemaining,
+      gamePhase,
+      selectedRoom,
+      isKilling,
+      knockSequence,
+      knockIndex,
+      roundResult,
+      placeFreeBet,
+      placeGamblingBet,
+      selectRoom,
+      startNewRound,
+      skipBettingTimer,
+      getTotalGamblingBetsForRoom,
+      getFreeBetCountForRoom,
+      getTotalPot,
+      hasPlacedFreeBet,
+      getMyGamblingBets,
+      getRoomsWithBets,
+    }}>
+      {children}
+    </GameContext.Provider>
+  )
+}
+
+export function useGame() {
+  const context = useContext(GameContext)
+  if (context === undefined) {
+    throw new Error('useGame must be used within a GameProvider')
+  }
+  return context
+}

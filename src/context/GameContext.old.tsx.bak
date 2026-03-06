@@ -1,0 +1,873 @@
+'use client'
+
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { triggerServerDevBuy } from '@/utils/devbuy'
+import { supabase } from '@/lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+export interface FreeBet {
+  walletAddress: string
+  roomId: number
+  timestamp: number
+}
+
+export interface GamblingBet {
+  walletAddress: string
+  roomId: number
+  amount: number
+  timestamp: number
+}
+
+export interface Room {
+  id: number
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  freeBets: FreeBet[]
+  gamblingBets: GamblingBet[]
+}
+
+export type GamePhase = 'betting' | 'knocking' | 'killing' | 'result'
+
+export interface DoorPosition {
+  roomId: number
+  x: number
+  y: number
+}
+
+export interface RoundResult {
+  killedRoom: number
+  totalPot: number
+  winnersExist: boolean
+  payouts: { wallet: string; amount: number; betAmount: number }[]
+  correctFreeBets: string[]
+  devBuyAmount: number
+}
+
+export interface PlayerPosition {
+  walletAddress: string
+  roomId: number | null
+  positionX: number | null
+  positionY: number | null
+}
+
+interface GameState {
+  rooms: Room[]
+  killerPosition: { x: number; y: number }
+  killerTargetRoom: number | null
+  killerKnockingRoom: number | null
+  killerKillRoom: number | null
+  currentRound: number
+  roundTimeRemaining: number
+  gamePhase: GamePhase
+  selectedRoom: number | null
+  isKilling: boolean
+  knockSequence: number[]
+  knockIndex: number
+  roundResult: RoundResult | null
+  playerPositions: PlayerPosition[]
+  sessionId: string | null
+}
+
+interface GameContextType extends GameState {
+  placeFreeBet: (roomId: number, walletAddress: string) => Promise<boolean>
+  placeGamblingBet: (roomId: number, amount: number, walletAddress: string) => Promise<void>
+  selectRoom: (roomId: number | null) => void
+  startNewRound: () => void
+  skipBettingTimer: () => void
+  getTotalGamblingBetsForRoom: (roomId: number) => number
+  getFreeBetCountForRoom: (roomId: number) => number
+  getTotalPot: () => number
+  hasPlacedFreeBet: (walletAddress: string) => boolean
+  getMyGamblingBets: (walletAddress: string) => GamblingBet[]
+  getRoomsWithBets: () => number[]
+  updatePlayerPosition: (walletAddress: string, roomId: number | null) => Promise<void>
+}
+
+const BETTABLE_ROOMS: Room[] = [
+  { id: 1, name: 'Master Bedroom', x: 40, y: 40, width: 220, height: 180, freeBets: [], gamblingBets: [] },
+  { id: 2, name: 'Bedroom 2', x: 40, y: 240, width: 180, height: 160, freeBets: [], gamblingBets: [] },
+  { id: 3, name: 'Bedroom 3', x: 40, y: 420, width: 180, height: 140, freeBets: [], gamblingBets: [] },
+  { id: 4, name: 'Study', x: 500, y: 40, width: 180, height: 160, freeBets: [], gamblingBets: [] },
+  { id: 5, name: 'Master Bath', x: 280, y: 40, width: 200, height: 130, freeBets: [], gamblingBets: [] },
+  { id: 6, name: 'Bathroom 2', x: 500, y: 220, width: 180, height: 120, freeBets: [], gamblingBets: [] },
+  { id: 7, name: 'Kitchen', x: 500, y: 360, width: 180, height: 200, freeBets: [], gamblingBets: [] },
+]
+
+const buildInitialRooms = (): Room[] => [
+  ...BETTABLE_ROOMS.map(r => ({ ...r, freeBets: [], gamblingBets: [] })),
+]
+
+const doorPositions: DoorPosition[] = [
+  { roomId: 1, x: 268, y: 120 },
+  { roomId: 2, x: 228, y: 310 },
+  { roomId: 3, x: 228, y: 480 },
+  { roomId: 4, x: 480, y: 120 },
+  { roomId: 5, x: 360, y: 178 },
+  { roomId: 6, x: 480, y: 278 },
+  { roomId: 7, x: 480, y: 450 },
+]
+
+const HALLWAY_WAYPOINTS = [
+  { x: 360, y: 220 },
+  { x: 360, y: 375 },
+  { x: 360, y: 520 },
+  { x: 300, y: 375 },
+  { x: 420, y: 300 },
+  { x: 360, y: 220 },
+]
+const HALLWAY_CENTER = { x: 360, y: 375 }
+
+const BETTING_DURATION = 60
+const KNOCK_DURATION = 3000
+const KILL_DURATION = 4000
+const RESULT_DISPLAY_DURATION = 8000
+const FREE_BET_DEVBUY = 0.01
+
+const GameContext = createContext<GameContextType | undefined>(undefined)
+
+export function GameProvider({ children }: { children: React.ReactNode }) {
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [rooms, setRooms] = useState<Room[]>(buildInitialRooms())
+  const [killerPosition, setKillerPosition] = useState(HALLWAY_CENTER)
+  const [killerTargetRoom, setKillerTargetRoom] = useState<number | null>(null)
+  const [killerKnockingRoom, setKillerKnockingRoom] = useState<number | null>(null)
+  const [killerKillRoom, setKillerKillRoom] = useState<number | null>(null)
+  const [currentRound, setCurrentRound] = useState(1)
+  const [roundTimeRemaining, setRoundTimeRemaining] = useState(BETTING_DURATION)
+  const [gamePhase, setGamePhase] = useState<GamePhase>('betting')
+  const [selectedRoom, setSelectedRoom] = useState<number | null>(null)
+  const [isKilling, setIsKilling] = useState(false)
+  const [knockSequence, setKnockSequence] = useState<number[]>([])
+  const [knockIndex, setKnockIndex] = useState(0)
+  const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
+  const [playerPositions, setPlayerPositions] = useState<PlayerPosition[]>([])
+  
+  const knockTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const patrolTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const patrolIndexRef = useRef(0)
+  const roomsSnapshotRef = useRef<Room[]>(rooms)
+  const resultProcessedRef = useRef(false)
+  const channelRef = useRef<RealtimeChannel | null>(null)
+  const isGameMasterRef = useRef(false)
+
+  const getRoomCenter = useCallback((roomId: number) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) return HALLWAY_CENTER
+    return { x: room.x + room.width / 2, y: room.y + room.height / 2 }
+  }, [rooms])
+
+  const getRoomsWithBets = useCallback(() => {
+    return rooms.filter(r => r.freeBets.length > 0 || r.gamblingBets.length > 0).map(r => r.id)
+  }, [rooms])
+
+  const getTotalGamblingBetsForRoom = useCallback((roomId: number) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) return 0
+    return room.gamblingBets.reduce((sum, b) => sum + b.amount, 0)
+  }, [rooms])
+
+  const getFreeBetCountForRoom = useCallback((roomId: number) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (!room) return 0
+    return room.freeBets.length
+  }, [rooms])
+
+  const getTotalPot = useCallback(() => {
+    return rooms.reduce((sum, r) => sum + r.gamblingBets.reduce((s, b) => s + b.amount, 0), 0)
+  }, [rooms])
+
+  const hasPlacedFreeBet = useCallback((walletAddress: string) => {
+    return rooms.some(r => r.freeBets.some(b => b.walletAddress === walletAddress))
+  }, [rooms])
+
+  const getMyGamblingBets = useCallback((walletAddress: string) => {
+    const bets: GamblingBet[] = []
+    rooms.forEach(r => r.gamblingBets.forEach(b => {
+      if (b.walletAddress === walletAddress) bets.push(b)
+    }))
+    return bets
+  }, [rooms])
+
+  useEffect(() => {
+    async function initSession() {
+      try {
+        const response = await fetch('/api/game/session')
+        const data = await response.json()
+        
+        if (data.session) {
+          // Set game master FIRST before setting sessionId (which triggers effects)
+          const existingMaster = localStorage.getItem('game_master_session')
+          if (!existingMaster || existingMaster !== data.session.id) {
+            localStorage.setItem('game_master_session', data.session.id)
+            isGameMasterRef.current = true
+            console.log('[Multiplayer] 👑 Set as game master during init')
+          } else {
+            isGameMasterRef.current = true
+            console.log('[Multiplayer] 👑 Already game master during init')
+          }
+          
+          setSessionId(data.session.id)
+          setCurrentRound(data.session.round_number)
+          setGamePhase(data.session.game_phase)
+          setRoundTimeRemaining(data.session.round_time_remaining)
+          setKillerPosition({ x: data.session.killer_position_x, y: data.session.killer_position_y })
+          setKillerTargetRoom(data.session.killer_target_room)
+          setKillerKnockingRoom(data.session.killer_knocking_room)
+          setKillerKillRoom(data.session.killer_kill_room)
+          setKnockSequence(data.session.knock_sequence || [])
+          setKnockIndex(data.session.knock_index || 0)
+          setIsKilling(data.session.is_killing || false)
+          
+          const betsResponse = await fetch(`/api/game/bet?sessionId=${data.session.id}`)
+          const betsData = await betsResponse.json()
+          
+          if (betsData.bets) {
+            const updatedRooms = buildInitialRooms()
+            betsData.bets.forEach((bet: any) => {
+              const room = updatedRooms.find(r => r.id === bet.room_id)
+              if (room) {
+                if (bet.bet_type === 'free') {
+                  room.freeBets.push({
+                    walletAddress: bet.wallet_address,
+                    roomId: bet.room_id,
+                    timestamp: new Date(bet.created_at).getTime()
+                  })
+                } else {
+                  room.gamblingBets.push({
+                    walletAddress: bet.wallet_address,
+                    roomId: bet.room_id,
+                    amount: bet.amount,
+                    timestamp: new Date(bet.created_at).getTime()
+                  })
+                }
+              }
+            })
+            setRooms(updatedRooms)
+          }
+
+          const posResponse = await fetch(`/api/game/position?sessionId=${data.session.id}`)
+          const posData = await posResponse.json()
+          if (posData.positions) {
+            setPlayerPositions(posData.positions.map((p: any) => ({
+              walletAddress: p.wallet_address,
+              roomId: p.room_id,
+              positionX: p.position_x,
+              positionY: p.position_y
+            })))
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing session:', error)
+      }
+    }
+
+    initSession()
+  }, [])
+
+  useEffect(() => {
+    if (!sessionId) return
+
+    console.log('[Multiplayer] 🔌 Setting up real-time subscriptions for session:', sessionId)
+
+    const channel = supabase
+      .channel(`game:${sessionId}`, {
+        config: {
+          broadcast: { self: true }
+        }
+      })
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'bets', filter: `session_id=eq.${sessionId}` },
+        (payload) => {
+          console.log('[Multiplayer] 📥 New bet received:', payload.new)
+          const bet = payload.new
+          setRooms(prev => prev.map(room => {
+            if (room.id === bet.room_id) {
+              if (bet.bet_type === 'free') {
+                return {
+                  ...room,
+                  freeBets: [...room.freeBets, {
+                    walletAddress: bet.wallet_address,
+                    roomId: bet.room_id,
+                    timestamp: new Date(bet.created_at).getTime()
+                  }]
+                }
+              } else {
+                return {
+                  ...room,
+                  gamblingBets: [...room.gamblingBets, {
+                    walletAddress: bet.wallet_address,
+                    roomId: bet.room_id,
+                    amount: bet.amount,
+                    timestamp: new Date(bet.created_at).getTime()
+                  }]
+                }
+              }
+            }
+            return room
+          }))
+        }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
+        (payload) => {
+          console.log('[Multiplayer] 🎮 Game session updated:', payload.new.game_phase)
+          const session = payload.new
+          setGamePhase(session.game_phase)
+          setRoundTimeRemaining(session.round_time_remaining)
+          setKillerPosition({ x: session.killer_position_x, y: session.killer_position_y })
+          setKillerTargetRoom(session.killer_target_room)
+          setKillerKnockingRoom(session.killer_knocking_room)
+          setKillerKillRoom(session.killer_kill_room)
+          setKnockSequence(session.knock_sequence || [])
+          setKnockIndex(session.knock_index || 0)
+          setIsKilling(session.is_killing || false)
+          setCurrentRound(session.round_number)
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'player_positions', filter: `session_id=eq.${sessionId}` },
+        async () => {
+          console.log('[Multiplayer] 👤 Player position updated')
+          const posResponse = await fetch(`/api/game/position?sessionId=${sessionId}`)
+          const posData = await posResponse.json()
+          if (posData.positions) {
+            setPlayerPositions(posData.positions.map((p: any) => ({
+              walletAddress: p.wallet_address,
+              roomId: p.room_id,
+              positionX: p.position_x,
+              positionY: p.position_y
+            })))
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Multiplayer] 📡 Subscription status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('[Multiplayer] ✅ Real-time sync active!')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[Multiplayer] ❌ Channel error - check Supabase realtime is enabled')
+        } else if (status === 'TIMED_OUT') {
+          console.error('[Multiplayer] ⏱️ Subscription timed out')
+        }
+      })
+
+    channelRef.current = channel
+
+    return () => {
+      console.log('[Multiplayer] 🔌 Unsubscribing from real-time channel')
+      channel.unsubscribe()
+    }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!sessionId) return
+
+    const checkGameMaster = () => {
+      const gameMasterId = localStorage.getItem('game_master_session')
+      
+      if (gameMasterId === sessionId) {
+        isGameMasterRef.current = true
+        console.log('[Multiplayer] 👑 I am the game master for session:', sessionId)
+        return
+      }
+      
+      if (!gameMasterId) {
+        localStorage.setItem('game_master_session', sessionId)
+        isGameMasterRef.current = true
+        console.log('[Multiplayer] 👑 Becoming game master for session:', sessionId)
+      } else {
+        isGameMasterRef.current = false
+        console.log('[Multiplayer] 👥 I am a follower client (master is session:', gameMasterId, ')')
+      }
+    }
+
+    checkGameMaster()
+  }, [sessionId])
+
+  useEffect(() => {
+    if (gamePhase !== 'betting') return
+    if (!isGameMasterRef.current) return
+    if (!sessionId) return
+
+    patrolIndexRef.current = 0
+    setKillerPosition(HALLWAY_WAYPOINTS[0])
+
+    const patrol = async () => {
+      patrolIndexRef.current = (patrolIndexRef.current + 1) % HALLWAY_WAYPOINTS.length
+      const newPos = HALLWAY_WAYPOINTS[patrolIndexRef.current]
+      setKillerPosition(newPos)
+      
+      await fetch('/api/game/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          sessionId,
+          updates: {
+            killer_position_x: newPos.x,
+            killer_position_y: newPos.y
+          }
+        })
+      })
+      
+      patrolTimerRef.current = setTimeout(patrol, 2500 + Math.random() * 1500)
+    }
+    patrolTimerRef.current = setTimeout(patrol, 2500)
+
+    return () => { if (patrolTimerRef.current) clearTimeout(patrolTimerRef.current) }
+  }, [gamePhase, sessionId])
+
+  useEffect(() => {
+    if (gamePhase !== 'betting') return
+    if (!isGameMasterRef.current) return
+    if (!sessionId) return
+
+    console.log('[Multiplayer] ⏱️ Starting betting timer, gameMaster:', isGameMasterRef.current)
+
+    const timer = setInterval(() => {
+      setRoundTimeRemaining(prev => {
+        const newTime = prev - 1
+
+        if (newTime <= 0) {
+          clearInterval(timer)
+          console.log('[Multiplayer] ⏱️ Timer reached 0, transitioning to knocking')
+          // Snapshot rooms before transitioning
+          roomsSnapshotRef.current = rooms
+          setGamePhase('knocking')
+          fetch('/api/game/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'update',
+              sessionId,
+              updates: { game_phase: 'knocking', round_time_remaining: 0 }
+            })
+          })
+          return 0
+        }
+
+        // Sync timer to server every 5 seconds to reduce API calls
+        if (newTime % 5 === 0) {
+          fetch('/api/game/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'update',
+              sessionId,
+              updates: { round_time_remaining: newTime }
+            })
+          })
+        }
+
+        return newTime
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [gamePhase, sessionId, rooms])
+
+  useEffect(() => {
+    if (gamePhase !== 'knocking') return
+    if (!isGameMasterRef.current) {
+      console.log('[Multiplayer] 🚪 Knocking phase but NOT game master, skipping control')
+      return
+    }
+    if (!sessionId) return
+
+    console.log('[Multiplayer] 🚪 Starting knocking phase as game master')
+
+    const shuffled = [1, 2, 3, 4, 5, 6, 7].sort(() => Math.random() - 0.5)
+    console.log('[Multiplayer] 🚪 Knock sequence:', shuffled)
+    setKnockSequence(shuffled)
+    setKnockIndex(0)
+    setKillerKnockingRoom(null)
+
+    fetch('/api/game/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update',
+        sessionId,
+        updates: {
+          knock_sequence: shuffled,
+          knock_index: 0,
+          killer_knocking_room: null
+        }
+      })
+    })
+
+    return () => { if (knockTimerRef.current) clearTimeout(knockTimerRef.current) }
+  }, [gamePhase, sessionId])
+
+  useEffect(() => {
+    if (gamePhase !== 'knocking') return
+    if (!isGameMasterRef.current) return
+    if (!sessionId) return
+    if (knockSequence.length === 0) return
+
+    console.log(`[Multiplayer] 🚪 Knock step: ${knockIndex}/${knockSequence.length}`)
+
+    if (knockIndex >= knockSequence.length) {
+      const targetId = BETTABLE_ROOMS[Math.floor(Math.random() * BETTABLE_ROOMS.length)].id
+      const targetCenter = getRoomCenter(targetId)
+      
+      console.log(`[Multiplayer] 🔪 All rooms knocked. Killing room ${targetId}`)
+      
+      setKillerKnockingRoom(null)
+      setKillerKillRoom(targetId)
+      setKillerPosition(targetCenter)
+      setKillerTargetRoom(targetId)
+      setGamePhase('killing')
+
+      fetch('/api/game/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          sessionId,
+          updates: {
+            game_phase: 'killing',
+            killer_knocking_room: null,
+            killer_kill_room: targetId,
+            killer_position_x: targetCenter.x,
+            killer_position_y: targetCenter.y,
+            killer_target_room: targetId
+          }
+        })
+      })
+      return
+    }
+
+    const currentRoomId = knockSequence[knockIndex]
+    const doorPos = doorPositions.find(d => d.roomId === currentRoomId)
+    if (doorPos) {
+      console.log(`[Multiplayer] 🚪 Knocking on room ${currentRoomId} at door (${doorPos.x}, ${doorPos.y})`)
+      setKillerPosition({ x: doorPos.x, y: doorPos.y })
+      setKillerKnockingRoom(currentRoomId)
+      setKillerTargetRoom(null)
+
+      fetch('/api/game/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          sessionId,
+          updates: {
+            killer_position_x: doorPos.x,
+            killer_position_y: doorPos.y,
+            killer_knocking_room: currentRoomId,
+            killer_target_room: null
+          }
+        })
+      })
+    }
+
+    knockTimerRef.current = setTimeout(() => {
+      setKnockIndex(prev => prev + 1)
+    }, KNOCK_DURATION)
+
+    return () => { if (knockTimerRef.current) clearTimeout(knockTimerRef.current) }
+  }, [gamePhase, knockIndex, knockSequence, getRoomCenter, sessionId])
+
+  useEffect(() => {
+    if (gamePhase !== 'killing') return
+    if (!isGameMasterRef.current) return
+    if (!sessionId) return
+
+    console.log('[Multiplayer] 🔪 Killing phase started, room:', killerKillRoom)
+    setIsKilling(true)
+    
+    fetch('/api/game/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update',
+        sessionId,
+        updates: { is_killing: true }
+      })
+    })
+
+    const killTimer = setTimeout(() => {
+      console.log('[Multiplayer] 🔪 Kill complete, transitioning to result')
+      setIsKilling(false)
+      setGamePhase('result')
+      
+      fetch('/api/game/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          sessionId,
+          updates: {
+            game_phase: 'result',
+            is_killing: false
+          }
+        })
+      })
+    }, KILL_DURATION)
+    
+    return () => clearTimeout(killTimer)
+  }, [gamePhase, sessionId])
+
+  useEffect(() => {
+    if (gamePhase === 'betting') {
+      roomsSnapshotRef.current = rooms
+    }
+  }, [gamePhase, rooms])
+
+  useEffect(() => {
+    if (gamePhase === 'betting') {
+      resultProcessedRef.current = false
+    }
+  }, [gamePhase])
+
+  useEffect(() => {
+    if (gamePhase !== 'result') return
+    if (killerKillRoom === null) return
+    if (resultProcessedRef.current) return
+    if (!isGameMasterRef.current) return
+
+    resultProcessedRef.current = true
+
+    const snapshotRooms = roomsSnapshotRef.current
+    const killedRoom = killerKillRoom
+    const allGamblingBets: GamblingBet[] = []
+    snapshotRooms.forEach(r => r.gamblingBets.forEach(b => allGamblingBets.push(b)))
+
+    const totalPot = allGamblingBets.reduce((s, b) => s + b.amount, 0)
+    const winningBets = allGamblingBets.filter(b => b.roomId === killedRoom)
+    const winningTotal = winningBets.reduce((s, b) => s + b.amount, 0)
+
+    const killedRoomData = snapshotRooms.find(r => r.id === killedRoom)
+    const correctFreeBets = killedRoomData ? killedRoomData.freeBets.map(b => b.walletAddress) : []
+
+    let payouts: RoundResult['payouts'] = []
+    let devBuyAmount = correctFreeBets.length * FREE_BET_DEVBUY
+
+    if (winningTotal > 0 && totalPot > 0) {
+      payouts = winningBets.map(b => ({
+        wallet: b.walletAddress,
+        amount: (b.amount / winningTotal) * totalPot,
+        betAmount: b.amount,
+      }))
+    } else if (totalPot > 0) {
+      devBuyAmount += totalPot
+    }
+
+    const result: RoundResult = {
+      killedRoom,
+      totalPot,
+      winnersExist: winningTotal > 0,
+      payouts,
+      correctFreeBets,
+      devBuyAmount,
+    }
+    setRoundResult(result)
+
+    if (devBuyAmount > 0) {
+      triggerServerDevBuy(devBuyAmount)
+        .then(res => {
+          if (res.success) {
+            console.log(`[Game] ✅ Devbuy of ${devBuyAmount} SOL executed. TX: ${res.signature}`)
+          } else {
+            console.error(`[Game] ❌ Devbuy failed: ${res.error}`)
+          }
+        })
+        .catch(err => {
+          console.error(`[Game] ❌ Devbuy error:`, err)
+        })
+    }
+  }, [gamePhase, killerKillRoom])
+
+  const placeFreeBet = useCallback(async (roomId: number, walletAddress: string): Promise<boolean> => {
+    if (gamePhase !== 'betting') return false
+    if (!sessionId) return false
+
+    const alreadyBet = rooms.some(r => r.freeBets.some(b => b.walletAddress === walletAddress))
+    if (alreadyBet) return false
+
+    try {
+      const response = await fetch('/api/game/bet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          walletAddress,
+          roomId,
+          betType: 'free',
+          amount: 0
+        })
+      })
+
+      const data = await response.json()
+      return !!data.bet
+    } catch (error) {
+      console.error('Error placing free bet:', error)
+      return false
+    }
+  }, [gamePhase, rooms, sessionId])
+
+  const placeGamblingBet = useCallback(async (roomId: number, amount: number, walletAddress: string) => {
+    if (gamePhase !== 'betting') return
+    if (amount <= 0) return
+    if (!sessionId) return
+
+    try {
+      await fetch('/api/game/bet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          walletAddress,
+          roomId,
+          betType: 'gambling',
+          amount
+        })
+      })
+    } catch (error) {
+      console.error('Error placing gambling bet:', error)
+    }
+  }, [gamePhase, sessionId])
+
+  const updatePlayerPosition = useCallback(async (walletAddress: string, roomId: number | null) => {
+    if (!sessionId) return
+
+    try {
+      const room = roomId ? rooms.find(r => r.id === roomId) : null
+      const posX = room ? room.x + room.width / 2 : null
+      const posY = room ? room.y + room.height / 2 : null
+
+      await fetch('/api/game/position', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          walletAddress,
+          roomId,
+          positionX: posX,
+          positionY: posY
+        })
+      })
+    } catch (error) {
+      console.error('Error updating position:', error)
+    }
+  }, [sessionId, rooms])
+
+  const selectRoom = useCallback((roomId: number | null) => {
+    if (gamePhase !== 'betting') return
+    setSelectedRoom(roomId)
+  }, [gamePhase])
+
+  const skipBettingTimer = useCallback(async () => {
+    if (gamePhase !== 'betting') return
+    if (!sessionId) return
+
+    roomsSnapshotRef.current = rooms
+    setRoundTimeRemaining(0)
+    
+    await fetch('/api/game/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update',
+        sessionId,
+        updates: {
+          game_phase: 'knocking',
+          round_time_remaining: 0
+        }
+      })
+    })
+  }, [gamePhase, rooms, sessionId])
+
+  const startNewRound = useCallback(async () => {
+    if (!sessionId) return
+
+    localStorage.removeItem('game_master_session')
+    
+    const response = await fetch('/api/game/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create' })
+    })
+    
+    const data = await response.json()
+    if (data.session) {
+      localStorage.setItem('game_master_session', data.session.id)
+      isGameMasterRef.current = true
+      
+      setSessionId(data.session.id)
+      setRooms(buildInitialRooms())
+      setCurrentRound(prev => prev + 1)
+      setRoundTimeRemaining(BETTING_DURATION)
+      setGamePhase('betting')
+      setKillerTargetRoom(null)
+      setKillerPosition(HALLWAY_CENTER)
+      setKillerKnockingRoom(null)
+      setKillerKillRoom(null)
+      setIsKilling(false)
+      setSelectedRoom(null)
+      setKnockSequence([])
+      setKnockIndex(0)
+      setRoundResult(null)
+      setPlayerPositions([])
+      
+      console.log('[Multiplayer] 🔄 New round started, I am game master')
+    }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (gamePhase !== 'result') return
+    if (!roundResult) return
+    if (!isGameMasterRef.current) return
+
+    const restartTimer = setTimeout(() => {
+      startNewRound()
+    }, RESULT_DISPLAY_DURATION)
+    
+    return () => clearTimeout(restartTimer)
+  }, [gamePhase, roundResult, startNewRound])
+
+  return (
+    <GameContext.Provider value={{
+      rooms,
+      killerPosition,
+      killerTargetRoom,
+      killerKnockingRoom,
+      killerKillRoom,
+      currentRound,
+      roundTimeRemaining,
+      gamePhase,
+      selectedRoom,
+      isKilling,
+      knockSequence,
+      knockIndex,
+      roundResult,
+      playerPositions,
+      sessionId,
+      placeFreeBet,
+      placeGamblingBet,
+      selectRoom,
+      startNewRound,
+      skipBettingTimer,
+      getTotalGamblingBetsForRoom,
+      getFreeBetCountForRoom,
+      getTotalPot,
+      hasPlacedFreeBet,
+      getMyGamblingBets,
+      getRoomsWithBets,
+      updatePlayerPosition,
+    }}>
+      {children}
+    </GameContext.Provider>
+  )
+}
+
+export function useGame() {
+  const context = useContext(GameContext)
+  if (context === undefined) {
+    throw new Error('useGame must be used within a GameProvider')
+  }
+  return context
+}

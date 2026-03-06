@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 26, 39, 68;
+  --background-end-rgb: 15, 26, 46;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  min-height: 100vh;
+}
+
+/* Blueprint grid pattern */
+.blueprint-grid {
+  background-image: 
+    linear-gradient(rgba(74, 158, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 158, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* 3D Floor Plan container */
+.floor-plan-3d {
+  background: radial-gradient(ellipse at center, #111 0%, #050505 100%);
+  overflow: hidden;
+}
+
+.floor-plan-3d svg {
+  transition: transform 0.3s ease;
+}
+
+/* Glowing effect for rooms */
+.room-glow {
+  filter: drop-shadow(0 0 8px rgba(74, 158, 255, 0.5));
+}
+
+/* Killer glow effect */
+.killer-glow {
+  filter: drop-shadow(0 0 12px rgba(255, 0, 0, 0.8));
+}
+
+/* Wallet adapter styles override */
+.wallet-adapter-button {
+  background-color: #4a9eff !important;
+}
+
+.wallet-adapter-button:hover {
+  background-color: #00d4ff !important;
+}
