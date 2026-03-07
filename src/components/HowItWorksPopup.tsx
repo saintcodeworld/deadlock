@@ -55,7 +55,7 @@ export function HowItWorksPopup({ isOpen, onClose }: HowItWorksPopupProps) {
                   <div>
                     <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">1. Postgres / Supabase</h3>
                     <p className="text-sm text-gray-400 leading-relaxed">
-                      All game state, bets, and wallet balances are stored securely in a relational PostgreSQL database via Supabase. Every interaction ensures strict data consistency.
+                      All game state, bets, killer positions, and wallet balances are stored securely in a relational PostgreSQL database via Supabase. Both killers' movements and the surviving room outcome are tracked with strict data consistency.
                     </p>
                   </div>
                 </div>
@@ -67,7 +67,7 @@ export function HowItWorksPopup({ isOpen, onClose }: HowItWorksPopupProps) {
                   <div>
                     <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">2. Realtime Multiplayer</h3>
                     <p className="text-sm text-gray-400 leading-relaxed">
-                      Supabase Realtime channels broadcast live player positions and game phases to all connected clients instantly. When the killer moves, everyone sees it at the exact same millisecond.
+                      Supabase Realtime channels broadcast live player positions and game phases to all connected clients instantly. When both killers move and knock on doors, everyone sees it at the exact same millisecond.
                     </p>
                   </div>
                 </div>
@@ -79,7 +79,7 @@ export function HowItWorksPopup({ isOpen, onClose }: HowItWorksPopupProps) {
                   <div>
                     <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">3. Server-side Authority</h3>
                     <p className="text-sm text-gray-400 leading-relaxed">
-                      The game logic (killer movement, RNG outcomes, payout calculations) runs entirely via protected server actions and API routes. The client only displays the horror—it does not dictate it.
+                      The game logic (dual killer movement, surviving room RNG, payout calculations) runs entirely via protected server actions and API routes. The client only displays the horror—it does not dictate it.
                     </p>
                   </div>
                 </div>

@@ -38,7 +38,8 @@ export interface DoorPosition {
 }
 
 export interface RoundResult {
-  killedRoom: number
+  survivingRoom: number
+  killedRooms: number[]
   totalPot: number
   winnersExist: boolean
   payouts: { wallet: string; amount: number; betAmount: number }[]
@@ -56,15 +57,23 @@ export interface PlayerPosition {
 interface GameState {
   rooms: Room[]
   killerPosition: { x: number; y: number }
+  killer2Position: { x: number; y: number }
   killerTargetRoom: number | null
+  killer2TargetRoom: number | null
   killerKnockingRoom: number | null
-  killerKillRoom: number | null
+  killer2KnockingRoom: number | null
+  killerKillRooms: number[]
+  killer2KillRooms: number[]
+  survivingRoom: number | null
+  killSequence: { killer: 1 | 2; roomId: number }[]
+  killStep: number
   currentRound: number
   roundTimeRemaining: number
   gamePhase: GamePhase
   selectedRoom: number | null
   isKilling: boolean
   knockSequence: number[]
+  knock2Sequence: number[]
   knockIndex: number
   roundResult: RoundResult | null
   playerPositions: PlayerPosition[]
@@ -85,6 +94,7 @@ interface GameContextType extends GameState {
   getMyGamblingBets: (walletAddress: string) => GamblingBet[]
   getRoomsWithBets: () => number[]
   updatePlayerPosition: (walletAddress: string, roomId: number | null) => Promise<void>
+  isRoomKilled: (roomId: number) => boolean
 }
 
 const BETTABLE_ROOMS: Room[] = [
@@ -112,18 +122,29 @@ const doorPositions: DoorPosition[] = [
 ]
 
 const HALLWAY_WAYPOINTS = [
-  { x: 360, y: 220 },
-  { x: 360, y: 375 },
-  { x: 360, y: 520 },
+  { x: 340, y: 220 },
+  { x: 340, y: 375 },
+  { x: 340, y: 520 },
   { x: 300, y: 375 },
-  { x: 420, y: 300 },
-  { x: 360, y: 220 },
+  { x: 400, y: 300 },
+  { x: 340, y: 220 },
 ]
-const HALLWAY_CENTER = { x: 360, y: 375 }
+const HALLWAY_WAYPOINTS_2 = [
+  { x: 380, y: 520 },
+  { x: 380, y: 375 },
+  { x: 380, y: 220 },
+  { x: 420, y: 375 },
+  { x: 320, y: 300 },
+  { x: 380, y: 520 },
+]
+const HALLWAY_CENTER = { x: 340, y: 375 }
+const HALLWAY_CENTER_2 = { x: 380, y: 375 }
 
 const BETTING_DURATION = 60
 const KNOCK_DURATION = 3000
-const KILL_DURATION = 4000
+const KILL_STEP_DURATION = 3000
+const KILL_FINAL_PAUSE = 5000
+const KILL_FINAL_DURATION = 4000
 const RESULT_DISPLAY_DURATION = 8000
 const FREE_BET_DEVBUY = 0.01
 const MASTER_HEARTBEAT_INTERVAL = 5000
@@ -145,15 +166,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [rooms, setRooms] = useState<Room[]>(buildInitialRooms())
   const [killerPosition, setKillerPosition] = useState(HALLWAY_CENTER)
+  const [killer2Position, setKiller2Position] = useState(HALLWAY_CENTER_2)
   const [killerTargetRoom, setKillerTargetRoom] = useState<number | null>(null)
+  const [killer2TargetRoom, setKiller2TargetRoom] = useState<number | null>(null)
   const [killerKnockingRoom, setKillerKnockingRoom] = useState<number | null>(null)
-  const [killerKillRoom, setKillerKillRoom] = useState<number | null>(null)
+  const [killer2KnockingRoom, setKiller2KnockingRoom] = useState<number | null>(null)
+  const [killerKillRooms, setKillerKillRooms] = useState<number[]>([])
+  const [killer2KillRooms, setKiller2KillRooms] = useState<number[]>([])
+  const [survivingRoom, setSurvivingRoom] = useState<number | null>(null)
+  const [killSequence, setKillSequence] = useState<{ killer: 1 | 2; roomId: number }[]>([])
+  const [killStep, setKillStep] = useState(-1)
   const [currentRound, setCurrentRound] = useState(1)
   const [roundTimeRemaining, setRoundTimeRemaining] = useState(BETTING_DURATION)
   const [gamePhase, setGamePhase] = useState<GamePhase>('betting')
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null)
   const [isKilling, setIsKilling] = useState(false)
   const [knockSequence, setKnockSequence] = useState<number[]>([])
+  const [knock2Sequence, setKnock2Sequence] = useState<number[]>([])
   const [knockIndex, setKnockIndex] = useState(0)
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
   const [playerPositions, setPlayerPositions] = useState<PlayerPosition[]>([])
@@ -162,8 +191,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [sessionLoaded, setSessionLoaded] = useState(false)
 
   const knockTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const killTimerRef = useRef<NodeJS.Timeout | null>(null)
   const patrolTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const patrol2TimerRef = useRef<NodeJS.Timeout | null>(null)
   const patrolIndexRef = useRef(0)
+  const patrol2IndexRef = useRef(0)
   const roomsSnapshotRef = useRef<Room[]>(rooms)
   const resultProcessedRef = useRef(false)
   const channelRef = useRef<RealtimeChannel | null>(null)
@@ -336,10 +368,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const newPhase = session.game_phase
     setGamePhase(newPhase)
     setKillerPosition({ x: Number(session.killer_position_x), y: Number(session.killer_position_y) })
+    setKiller2Position({ x: Number(session.killer2_position_x || HALLWAY_CENTER_2.x), y: Number(session.killer2_position_y || HALLWAY_CENTER_2.y) })
     setKillerTargetRoom(session.killer_target_room)
+    setKiller2TargetRoom(session.killer2_target_room || null)
     setKillerKnockingRoom(session.killer_knocking_room)
-    setKillerKillRoom(session.killer_kill_room)
+    setKiller2KnockingRoom(session.killer2_knocking_room || null)
+    setKillerKillRooms(session.killer_kill_rooms || [])
+    setKiller2KillRooms(session.killer2_kill_rooms || [])
+    setSurvivingRoom(session.surviving_room || null)
+    setKillSequence(session.kill_sequence || [])
+    setKillStep(session.kill_step ?? -1)
     setKnockSequence(session.knock_sequence || [])
+    setKnock2Sequence(session.knock2_sequence || [])
     setKnockIndex(session.knock_index || 0)
     setIsKilling(session.is_killing || false)
     setCurrentRound(session.round_number)
@@ -385,10 +425,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setGamePhase(data.session.game_phase)
           setRoundTimeRemaining(data.session.round_time_remaining)
           setKillerPosition({ x: Number(data.session.killer_position_x), y: Number(data.session.killer_position_y) })
+          setKiller2Position({ x: Number(data.session.killer2_position_x || HALLWAY_CENTER_2.x), y: Number(data.session.killer2_position_y || HALLWAY_CENTER_2.y) })
           setKillerTargetRoom(data.session.killer_target_room)
+          setKiller2TargetRoom(data.session.killer2_target_room || null)
           setKillerKnockingRoom(data.session.killer_knocking_room)
-          setKillerKillRoom(data.session.killer_kill_room)
+          setKiller2KnockingRoom(data.session.killer2_knocking_room || null)
+          setKillerKillRooms(data.session.killer_kill_rooms || [])
+          setKiller2KillRooms(data.session.killer2_kill_rooms || [])
+          setSurvivingRoom(data.session.surviving_room || null)
+          setKillSequence(data.session.kill_sequence || [])
+          setKillStep(data.session.kill_step ?? -1)
           setKnockSequence(data.session.knock_sequence || [])
+          setKnock2Sequence(data.session.knock2_sequence || [])
           setKnockIndex(data.session.knock_index || 0)
           setIsKilling(data.session.is_killing || false)
 
@@ -565,18 +613,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [sessionId, applySessionState])
 
   // ============================================================
-  // GAME MASTER LOGIC: PATROL during betting
+  // GAME MASTER LOGIC: PATROL during betting (TWO KILLERS)
   // ============================================================
   useEffect(() => {
     if (gamePhase !== 'betting') return
     if (!isGameMasterRef.current) return
     if (!sessionId) return
 
-    console.log('[Multiplayer] 🚶 Starting killer patrol (master)')
+    console.log('[Multiplayer] 🚶 Starting dual killer patrol (master)')
     patrolIndexRef.current = 0
+    patrol2IndexRef.current = 0
     setKillerPosition(HALLWAY_WAYPOINTS[0])
+    setKiller2Position(HALLWAY_WAYPOINTS_2[0])
 
-    const patrol = () => {
+    const patrol1 = () => {
       patrolIndexRef.current = (patrolIndexRef.current + 1) % HALLWAY_WAYPOINTS.length
       const newPos = HALLWAY_WAYPOINTS[patrolIndexRef.current]
       setKillerPosition(newPos)
@@ -589,11 +639,31 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         })
       }
 
-      patrolTimerRef.current = setTimeout(patrol, 2500 + Math.random() * 1500)
+      patrolTimerRef.current = setTimeout(patrol1, 2500 + Math.random() * 1500)
     }
-    patrolTimerRef.current = setTimeout(patrol, 2500)
+    patrolTimerRef.current = setTimeout(patrol1, 2500)
 
-    return () => { if (patrolTimerRef.current) clearTimeout(patrolTimerRef.current) }
+    const patrol2 = () => {
+      patrol2IndexRef.current = (patrol2IndexRef.current + 1) % HALLWAY_WAYPOINTS_2.length
+      const newPos = HALLWAY_WAYPOINTS_2[patrol2IndexRef.current]
+      setKiller2Position(newPos)
+
+      const sid = sessionIdRef.current
+      if (sid) {
+        updateSessionOnServer(sid, {
+          killer2_position_x: newPos.x,
+          killer2_position_y: newPos.y
+        })
+      }
+
+      patrol2TimerRef.current = setTimeout(patrol2, 2000 + Math.random() * 2000)
+    }
+    patrol2TimerRef.current = setTimeout(patrol2, 1500)
+
+    return () => {
+      if (patrolTimerRef.current) clearTimeout(patrolTimerRef.current)
+      if (patrol2TimerRef.current) clearTimeout(patrol2TimerRef.current)
+    }
   }, [gamePhase, sessionId, isGameMaster, updateSessionOnServer])
 
   // ============================================================
@@ -660,32 +730,47 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [gamePhase, bettingEndsAt, updateSessionOnServer])
 
   // ============================================================
-  // GAME MASTER LOGIC: KNOCKING INIT
+  // GAME MASTER LOGIC: KNOCKING INIT (TWO KILLERS)
+  // Shuffle all 7 rooms, split into two sequences for each killer.
+  // Killer1 knocks rooms at even indices, Killer2 at odd indices.
+  // They knock in alternating steps so they never hit the same room.
   // ============================================================
   useEffect(() => {
     if (gamePhase !== 'knocking') return
     if (!isGameMasterRef.current) return
     if (!sessionId) return
 
-    console.log('[Multiplayer] 🚪 Starting knocking phase (master)')
+    console.log('[Multiplayer] 🚪 Starting dual-killer knocking phase (master)')
 
     const shuffled = [1, 2, 3, 4, 5, 6, 7].sort(() => Math.random() - 0.5)
-    console.log('[Multiplayer] 🚪 Knock sequence:', shuffled)
-    setKnockSequence(shuffled)
+    // Split: killer1 gets indices 0,2,4,6 and killer2 gets indices 1,3,5
+    const seq1 = shuffled.filter((_, i) => i % 2 === 0) // 4 rooms
+    const seq2 = shuffled.filter((_, i) => i % 2 === 1) // 3 rooms
+    console.log('[Multiplayer] 🚪 Killer1 knock sequence:', seq1)
+    console.log('[Multiplayer] 🚪 Killer2 knock sequence:', seq2)
+    setKnockSequence(seq1)
+    setKnock2Sequence(seq2)
     setKnockIndex(0)
     setKillerKnockingRoom(null)
+    setKiller2KnockingRoom(null)
 
     updateSessionOnServer(sessionId, {
-      knock_sequence: shuffled,
+      knock_sequence: seq1,
+      knock2_sequence: seq2,
       knock_index: 0,
-      killer_knocking_room: null
+      killer_knocking_room: null,
+      killer2_knocking_room: null
     })
 
     return () => { if (knockTimerRef.current) clearTimeout(knockTimerRef.current) }
   }, [gamePhase, sessionId, isGameMaster, updateSessionOnServer])
 
   // ============================================================
-  // GAME MASTER LOGIC: KNOCKING STEPS
+  // GAME MASTER LOGIC: KNOCKING STEPS (TWO KILLERS)
+  // At each knockIndex step, killer1 knocks knockSequence[knockIndex]
+  // and killer2 knocks knock2Sequence[knockIndex] (if available).
+  // They never knock the same room since the sequences are disjoint.
+  // When both are done, pick 1 surviving room → 6 rooms get killed.
   // ============================================================
   useEffect(() => {
     if (gamePhase !== 'knocking') return
@@ -693,71 +778,120 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (!sessionId) return
     if (knockSequence.length === 0) return
 
-    console.log(`[Multiplayer] 🚪 Knock step: ${knockIndex}/${knockSequence.length}`)
+    const maxSteps = Math.max(knockSequence.length, knock2Sequence.length)
+    console.log(`[Multiplayer] 🚪 Knock step: ${knockIndex}/${maxSteps}`)
 
-    if (knockIndex >= knockSequence.length) {
-      // All rooms knocked → pick a room to kill
-      const targetId = BETTABLE_ROOMS[Math.floor(Math.random() * BETTABLE_ROOMS.length)].id
-      const targetCenter = getRoomCenter(targetId)
+    if (knockIndex >= maxSteps) {
+      // All rooms knocked → pick 1 surviving room, build step-by-step kill sequence
+      const survId = BETTABLE_ROOMS[Math.floor(Math.random() * BETTABLE_ROOMS.length)].id
+      const killedIds = BETTABLE_ROOMS.map(r => r.id).filter(id => id !== survId)
+      // Shuffle killed rooms for randomness
+      const shuffledKilled = killedIds.sort(() => Math.random() - 0.5)
 
-      console.log(`[Multiplayer] 🔪 Killing room ${targetId}`)
+      // Build kill sequence: alternating K1, K2 for first 4, then both choose final (6th) room
+      // Steps 0-4: alternating killer 1 and 2
+      // Step 5: final dramatic kill (killer 1 leads, both converge)
+      const seq: { killer: 1 | 2; roomId: number }[] = [
+        { killer: 1, roomId: shuffledKilled[0] },
+        { killer: 2, roomId: shuffledKilled[1] },
+        { killer: 1, roomId: shuffledKilled[2] },
+        { killer: 2, roomId: shuffledKilled[3] },
+        { killer: 1, roomId: shuffledKilled[4] }, // 5th kill — now 2 rooms left
+        { killer: 2, roomId: shuffledKilled[5] }, // 6th kill — FINAL, both converge
+      ]
+
+      const k1Rooms = seq.filter(s => s.killer === 1).map(s => s.roomId)
+      const k2Rooms = seq.filter(s => s.killer === 2).map(s => s.roomId)
+
+      console.log(`[Multiplayer] 🔪 Surviving room: ${survId}, Kill sequence:`, seq)
 
       setKillerKnockingRoom(null)
-      setKillerKillRoom(targetId)
-      setKillerPosition(targetCenter)
-      setKillerTargetRoom(targetId)
+      setKiller2KnockingRoom(null)
+      setKillerKillRooms(k1Rooms)
+      setKiller2KillRooms(k2Rooms)
+      setSurvivingRoom(survId)
+      setKillSequence(seq)
+      setKillStep(0)
       setGamePhase('killing')
 
       updateSessionOnServer(sessionId, {
         game_phase: 'killing',
         killer_knocking_room: null,
-        killer_kill_room: targetId,
-        killer_position_x: targetCenter.x,
-        killer_position_y: targetCenter.y,
-        killer_target_room: targetId
+        killer2_knocking_room: null,
+        killer_kill_rooms: k1Rooms,
+        killer2_kill_rooms: k2Rooms,
+        surviving_room: survId,
+        kill_sequence: seq,
+        kill_step: 0
       })
       return
     }
 
-    const currentRoomId = knockSequence[knockIndex]
-    const doorPos = doorPositions.find((d: DoorPosition) => d.roomId === currentRoomId)
-    if (doorPos) {
-      console.log(`[Multiplayer] 🚪 Knocking room ${currentRoomId}`)
-      setKillerPosition({ x: doorPos.x, y: doorPos.y })
-      setKillerKnockingRoom(currentRoomId)
-      setKillerTargetRoom(null)
-
-      updateSessionOnServer(sessionId, {
-        killer_position_x: doorPos.x,
-        killer_position_y: doorPos.y,
-        killer_knocking_room: currentRoomId,
-        killer_target_room: null,
-        knock_index: knockIndex
-      })
+    // Killer1 knocks its room at this index
+    const serverUpdate: Record<string, any> = { knock_index: knockIndex }
+    if (knockIndex < knockSequence.length) {
+      const room1Id = knockSequence[knockIndex]
+      const door1 = doorPositions.find((d: DoorPosition) => d.roomId === room1Id)
+      if (door1) {
+        console.log(`[Multiplayer] 🚪 Killer1 knocking room ${room1Id}`)
+        setKillerPosition({ x: door1.x, y: door1.y })
+        setKillerKnockingRoom(room1Id)
+        setKillerTargetRoom(null)
+        serverUpdate.killer_position_x = door1.x
+        serverUpdate.killer_position_y = door1.y
+        serverUpdate.killer_knocking_room = room1Id
+        serverUpdate.killer_target_room = null
+      }
+    } else {
+      setKillerKnockingRoom(null)
+      serverUpdate.killer_knocking_room = null
     }
+
+    // Killer2 knocks its room at this index
+    if (knockIndex < knock2Sequence.length) {
+      const room2Id = knock2Sequence[knockIndex]
+      const door2 = doorPositions.find((d: DoorPosition) => d.roomId === room2Id)
+      if (door2) {
+        console.log(`[Multiplayer] 🚪 Killer2 knocking room ${room2Id}`)
+        setKiller2Position({ x: door2.x, y: door2.y })
+        setKiller2KnockingRoom(room2Id)
+        setKiller2TargetRoom(null)
+        serverUpdate.killer2_position_x = door2.x
+        serverUpdate.killer2_position_y = door2.y
+        serverUpdate.killer2_knocking_room = room2Id
+        serverUpdate.killer2_target_room = null
+      }
+    } else {
+      setKiller2KnockingRoom(null)
+      serverUpdate.killer2_knocking_room = null
+    }
+
+    updateSessionOnServer(sessionId, serverUpdate)
 
     knockTimerRef.current = setTimeout(() => {
       setKnockIndex(prev => prev + 1)
     }, KNOCK_DURATION)
 
     return () => { if (knockTimerRef.current) clearTimeout(knockTimerRef.current) }
-  }, [gamePhase, knockIndex, knockSequence, getRoomCenter, sessionId, isGameMaster, updateSessionOnServer])
+  }, [gamePhase, knockIndex, knockSequence, knock2Sequence, getRoomCenter, sessionId, isGameMaster, updateSessionOnServer])
 
   // ============================================================
-  // GAME MASTER LOGIC: KILLING
+  // GAME MASTER LOGIC: KILLING — STEP BY STEP
+  // Each killStep: one killer moves to a room, kills it, pause, next step.
+  // Steps 0–4: alternating K1/K2, one room each.
+  // Step 5 (final): both killers converge on the last room — dramatic pause first.
+  // After step 5 completes → result phase.
   // ============================================================
   useEffect(() => {
     if (gamePhase !== 'killing') return
     if (!isGameMasterRef.current) return
     if (!sessionId) return
+    if (killSequence.length === 0) return
+    if (killStep < 0) return
 
-    console.log('[Multiplayer] 🔪 Killing phase (master), room:', killerKillRoom)
-    setIsKilling(true)
-
-    updateSessionOnServer(sessionId, { is_killing: true })
-
-    const killTimer = setTimeout(() => {
-      console.log('[Multiplayer] 🔪 Kill complete → result')
+    // All 6 rooms killed → transition to result
+    if (killStep >= killSequence.length) {
+      console.log('[Multiplayer] 🔪 All kills done → result')
       setIsKilling(false)
       setGamePhase('result')
 
@@ -765,13 +899,97 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (sid) {
         updateSessionOnServer(sid, {
           game_phase: 'result',
-          is_killing: false
+          is_killing: false,
+          kill_step: killStep
         })
       }
-    }, KILL_DURATION)
+      return
+    }
 
-    return () => clearTimeout(killTimer)
-  }, [gamePhase, sessionId, isGameMaster, updateSessionOnServer])
+    const step = killSequence[killStep]
+    const isFinalKill = killStep === killSequence.length - 1
+    const roomCenter = getRoomCenter(step.roomId)
+
+    console.log(`[Multiplayer] 🔪 Kill step ${killStep + 1}/${killSequence.length}: Killer${step.killer} → Room ${step.roomId}${isFinalKill ? ' (FINAL)' : ''}`)
+
+    setIsKilling(true)
+
+    if (isFinalKill) {
+      // FINAL KILL: Both killers converge on the last room
+      // First move both to hallway center for dramatic effect, then converge
+      setKillerPosition(HALLWAY_CENTER)
+      setKiller2Position(HALLWAY_CENTER_2)
+      setKillerTargetRoom(null)
+      setKiller2TargetRoom(null)
+
+      updateSessionOnServer(sessionId, {
+        is_killing: true,
+        kill_step: killStep,
+        killer_position_x: HALLWAY_CENTER.x,
+        killer_position_y: HALLWAY_CENTER.y,
+        killer2_position_x: HALLWAY_CENTER_2.x,
+        killer2_position_y: HALLWAY_CENTER_2.y,
+        killer_target_room: null,
+        killer2_target_room: null
+      })
+
+      // After dramatic pause, both killers move to the final room
+      killTimerRef.current = setTimeout(() => {
+        setKillerPosition(roomCenter)
+        setKiller2Position(roomCenter)
+        setKillerTargetRoom(step.roomId)
+        setKiller2TargetRoom(step.roomId)
+
+        const sid = sessionIdRef.current
+        if (sid) {
+          updateSessionOnServer(sid, {
+            killer_position_x: roomCenter.x,
+            killer_position_y: roomCenter.y,
+            killer2_position_x: roomCenter.x,
+            killer2_position_y: roomCenter.y,
+            killer_target_room: step.roomId,
+            killer2_target_room: step.roomId
+          })
+        }
+
+        // After the final kill animation, advance to next step (which triggers → result)
+        killTimerRef.current = setTimeout(() => {
+          setKillStep(prev => prev + 1)
+        }, KILL_FINAL_DURATION)
+      }, KILL_FINAL_PAUSE)
+    } else {
+      // Normal kill step: one killer enters the room
+      if (step.killer === 1) {
+        setKillerPosition(roomCenter)
+        setKillerTargetRoom(step.roomId)
+      } else {
+        setKiller2Position(roomCenter)
+        setKiller2TargetRoom(step.roomId)
+      }
+
+      const serverUpdate: Record<string, any> = {
+        is_killing: true,
+        kill_step: killStep,
+      }
+      if (step.killer === 1) {
+        serverUpdate.killer_position_x = roomCenter.x
+        serverUpdate.killer_position_y = roomCenter.y
+        serverUpdate.killer_target_room = step.roomId
+      } else {
+        serverUpdate.killer2_position_x = roomCenter.x
+        serverUpdate.killer2_position_y = roomCenter.y
+        serverUpdate.killer2_target_room = step.roomId
+      }
+      updateSessionOnServer(sessionId, serverUpdate)
+
+      // After kill animation, advance to next step
+      killTimerRef.current = setTimeout(() => {
+        setKillStep(prev => prev + 1)
+      }, KILL_STEP_DURATION)
+    }
+
+    return () => { if (killTimerRef.current) clearTimeout(killTimerRef.current) }
+  }, [gamePhase, killStep, killSequence, sessionId, isGameMaster, updateSessionOnServer, getRoomCenter])
 
   // ============================================================
   // ROOMS SNAPSHOT — always keep ref in sync during betting
@@ -788,26 +1006,29 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   // ============================================================
   // RESULT PROCESSING (only game master)
+  // Winners = those who bet on the SURVIVING room (1 of 7)
   // ============================================================
   useEffect(() => {
     if (gamePhase !== 'result') return
-    if (killerKillRoom === null) return
+    if (survivingRoom === null) return
     if (resultProcessedRef.current) return
     if (!isGameMasterRef.current) return
 
     resultProcessedRef.current = true
 
     const snapshotRooms = roomsSnapshotRef.current
-    const killedRoom = killerKillRoom
+    const allKilledRooms = [...killerKillRooms, ...killer2KillRooms]
     const allGamblingBets: GamblingBet[] = []
     snapshotRooms.forEach((r: Room) => r.gamblingBets.forEach((b: GamblingBet) => allGamblingBets.push(b)))
 
     const totalPot = allGamblingBets.reduce((s: number, b: GamblingBet) => s + b.amount, 0)
-    const winningBets = allGamblingBets.filter((b: GamblingBet) => b.roomId === killedRoom)
+    // Winners are those who bet on the SURVIVING room
+    const winningBets = allGamblingBets.filter((b: GamblingBet) => b.roomId === survivingRoom)
     const winningTotal = winningBets.reduce((s: number, b: GamblingBet) => s + b.amount, 0)
 
-    const killedRoomData = snapshotRooms.find((r: Room) => r.id === killedRoom)
-    const correctFreeBets = killedRoomData ? killedRoomData.freeBets.map((b: FreeBet) => b.walletAddress) : []
+    // Correct free bets = those who picked the surviving room
+    const survivingRoomData = snapshotRooms.find((r: Room) => r.id === survivingRoom)
+    const correctFreeBets = survivingRoomData ? survivingRoomData.freeBets.map((b: FreeBet) => b.walletAddress) : []
 
     let payouts: RoundResult['payouts'] = []
     let devBuyAmount = correctFreeBets.length * FREE_BET_DEVBUY
@@ -823,7 +1044,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
 
     const result: RoundResult = {
-      killedRoom,
+      survivingRoom,
+      killedRooms: allKilledRooms,
       totalPot,
       winnersExist: winningTotal > 0,
       payouts,
@@ -845,7 +1067,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           console.error(`[Game] ❌ Devbuy error:`, err)
         })
     }
-  }, [gamePhase, killerKillRoom, isGameMaster])
+  }, [gamePhase, survivingRoom, killerKillRooms, killer2KillRooms, isGameMaster])
 
   // ============================================================
   // ACTIONS
@@ -968,10 +1190,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       betting_ends_at: new Date(newBettingEndsAt).toISOString(),
       killer_position_x: HALLWAY_CENTER.x,
       killer_position_y: HALLWAY_CENTER.y,
+      killer2_position_x: HALLWAY_CENTER_2.x,
+      killer2_position_y: HALLWAY_CENTER_2.y,
       killer_target_room: null,
+      killer2_target_room: null,
       killer_knocking_room: null,
-      killer_kill_room: null,
+      killer2_knocking_room: null,
+      killer_kill_rooms: [] as number[],
+      killer2_kill_rooms: [] as number[],
+      surviving_room: null,
+      kill_sequence: [],
+      kill_step: -1,
       knock_sequence: [] as number[],
+      knock2_sequence: [] as number[],
       knock_index: 0,
       is_killing: false,
       game_master_id: clientIdRef.current,
@@ -987,12 +1218,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setRoundTimeRemaining(BETTING_DURATION)
     setGamePhase('betting')
     setKillerTargetRoom(null)
+    setKiller2TargetRoom(null)
     setKillerPosition(HALLWAY_CENTER)
+    setKiller2Position(HALLWAY_CENTER_2)
     setKillerKnockingRoom(null)
-    setKillerKillRoom(null)
+    setKiller2KnockingRoom(null)
+    setKillerKillRooms([])
+    setKiller2KillRooms([])
+    setSurvivingRoom(null)
+    setKillSequence([])
+    setKillStep(-1)
     setIsKilling(false)
     setSelectedRoom(null)
     setKnockSequence([])
+    setKnock2Sequence([])
     setKnockIndex(0)
     setRoundResult(null)
     setPlayerPositions([])
@@ -1013,19 +1252,36 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(restartTimer)
   }, [gamePhase, roundResult, isGameMaster, startNewRound])
 
+  // Only rooms killed up to current killStep are considered killed (step-by-step reveal)
+  const isRoomKilled = useCallback((roomId: number) => {
+    if (killSequence.length === 0 || killStep < 0) return false
+    for (let i = 0; i <= Math.min(killStep, killSequence.length - 1); i++) {
+      if (killSequence[i].roomId === roomId) return true
+    }
+    return false
+  }, [killSequence, killStep])
+
   return (
     <GameContext.Provider value={{
       rooms,
       killerPosition,
+      killer2Position,
       killerTargetRoom,
+      killer2TargetRoom,
       killerKnockingRoom,
-      killerKillRoom,
+      killer2KnockingRoom,
+      killerKillRooms,
+      killer2KillRooms,
+      survivingRoom,
+      killSequence,
+      killStep,
       currentRound,
       roundTimeRemaining,
       gamePhase,
       selectedRoom,
       isKilling,
       knockSequence,
+      knock2Sequence,
       knockIndex,
       roundResult,
       playerPositions,
@@ -1043,6 +1299,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       getMyGamblingBets,
       getRoomsWithBets,
       updatePlayerPosition,
+      isRoomKilled,
     }}>
       {children}
     </GameContext.Provider>

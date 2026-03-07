@@ -52,7 +52,7 @@ export function ChatSidebar() {
   return (
     <>
       {/* Chat panel - always visible */}
-      <div className="fixed left-0 top-0 bottom-0 z-50 w-80 flex flex-col bg-void/95 backdrop-blur-xl border-r border-void-border shadow-[5px_0_30px_rgba(0,0,0,0.9)] font-display">
+      <div className="fixed left-0 top-[88px] bottom-0 z-50 w-80 flex flex-col bg-void/95 backdrop-blur-xl border-r border-void-border shadow-[5px_0_30px_rgba(0,0,0,0.9)] font-display">
             {/* Glitch accent line */}
             <div className="absolute top-0 left-0 w-full h-[1px] bg-blood-glow opacity-50" />
 

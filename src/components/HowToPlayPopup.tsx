@@ -53,9 +53,9 @@ export function HowToPlayPopup({ isOpen, onClose }: HowToPlayPopupProps) {
                     <Coins className="w-5 h-5 text-red-500" />
                   </div>
                   <div>
-                    <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">1. Place Your Bets</h3>
+                    <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">1. Pick The Survivor</h3>
                     <p className="text-sm text-gray-400 leading-relaxed">
-                      Predict where the killer will strike. You can place a <span className="text-white font-bold">Free Bet</span> just to play, or a <span className="text-green-500 font-bold">Gambling Bet</span> (using SOL) to win real money.
+                      There are 7 rooms and <span className="text-red-500 font-bold">two killers</span>. Your goal is to guess which <span className="text-green-500 font-bold">one room survives</span>. Place a <span className="text-white font-bold">Free Bet</span> just to play, or a <span className="text-green-500 font-bold">Gambling Bet</span> (using SOL) to win real money.
                     </p>
                   </div>
                 </div>
@@ -65,9 +65,9 @@ export function HowToPlayPopup({ isOpen, onClose }: HowToPlayPopupProps) {
                     <Ghost className="w-5 h-5 text-red-500" />
                   </div>
                   <div>
-                    <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">2. The Killer Strikes</h3>
+                    <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">2. The Killers Strike</h3>
                     <p className="text-sm text-gray-400 leading-relaxed">
-                      Once betting closes, the Killer roams the house. They will randomly select one room and brutally murder everyone hiding inside.
+                      Once betting closes, <span className="text-red-500 font-bold">two killers</span> roam the house knocking on doors. They never enter the same room at the same time. Together they breach <span className="text-red-500 font-bold">6 out of 7 rooms</span>, massacring everyone inside. Only <span className="text-green-500 font-bold">one room is left untouched</span>.
                     </p>
                   </div>
                 </div>
@@ -79,7 +79,7 @@ export function HowToPlayPopup({ isOpen, onClose }: HowToPlayPopupProps) {
                   <div>
                     <h3 className="text-white font-bold mb-1 uppercase tracking-wider text-sm font-sans">3. Collect Your Reward</h3>
                     <p className="text-sm text-gray-400 leading-relaxed">
-                      If you guessed correctly and the killer attacks your room, you win! The total SOL lost by incorrect bettors is distributed evenly among the winners. <br /><br />
+                      If you picked the <span className="text-green-500 font-bold">one surviving room</span>, you win! The total SOL wagered by all other players is split among the winners proportionally. <br /><br />
                       If you won using a <span className="text-white font-bold">Free Bet</span>, the Dev will trigger a buy on the project's token as a reward!
                     </p>
                   </div>
@@ -88,8 +88,8 @@ export function HowToPlayPopup({ isOpen, onClose }: HowToPlayPopupProps) {
                 {/* The Two Word Conclusion */}
                 <div className="mt-8 p-6 bg-red-950/20 border border-red-900/30 text-center">
                   <p className="text-xs text-red-500/80 uppercase tracking-widest mb-2 font-sans font-bold">In Conclusion:</p>
-                  <h1 className="text-4xl font-black text-white tracking-[0.3em] uppercase font-sans drop-shadow-[0_0_15px_rgba(204,0,0,0.5)]">
-                    GUESS RIGHT
+                  <h1 className="text-4xl font-black text-white tracking-[0.3em] uppercase font-sans drop-shadow-[0_0_15px_rgba(0,204,68,0.5)]">
+                    SURVIVE
                   </h1>
                 </div>
 

@@ -5,7 +5,7 @@ import { useGame } from '@/context/GameContext'
 import { triggerServerDevBuy } from '@/utils/devbuy'
 
 export function DevTestPanel() {
-  const { gamePhase, placeFreeBet, rooms, skipBettingTimer, roundResult, killerKillRoom, roundTimeRemaining } = useGame()
+  const { gamePhase, placeFreeBet, rooms, skipBettingTimer, roundResult, killerKillRooms, killer2KillRooms, survivingRoom, roundTimeRemaining } = useGame()
   const [testAmount, setTestAmount] = useState('0.001')
   const [status, setStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -128,8 +128,10 @@ export function DevTestPanel() {
           <span className="text-white">{roundTimeRemaining}s</span>
           <span className="text-gray-500">Free bets:</span>
           <span className="text-white">{totalFreeBets}</span>
-          <span className="text-gray-500">Killed room:</span>
-          <span className="text-red-400">{killerKillRoom ?? '-'}</span>
+          <span className="text-gray-500">Surviving:</span>
+          <span className="text-green-400">{survivingRoom ?? '-'}</span>
+          <span className="text-gray-500">Killed:</span>
+          <span className="text-red-400">{[...killerKillRooms, ...killer2KillRooms].join(',') || '-'}</span>
           {roundResult && (
             <>
               <span className="text-gray-500">DevBuy amt:</span>

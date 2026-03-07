@@ -19,7 +19,11 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
     currentRound,
     gamePhase,
     killerKnockingRoom,
-    killerKillRoom,
+    killer2KnockingRoom,
+    survivingRoom,
+    killSequence,
+    killStep,
+    isRoomKilled,
     getTotalGamblingBetsForRoom,
     getFreeBetCountForRoom,
     getTotalPot,
@@ -49,11 +53,14 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const knockedRoomName = killerKnockingRoom
+  const knockedRoom1Name = killerKnockingRoom
     ? rooms.find(r => r.id === killerKnockingRoom)?.name || ''
     : ''
-  const killRoomName = killerKillRoom
-    ? rooms.find(r => r.id === killerKillRoom)?.name || ''
+  const knockedRoom2Name = killer2KnockingRoom
+    ? rooms.find(r => r.id === killer2KnockingRoom)?.name || ''
+    : ''
+  const survivingRoomName = survivingRoom
+    ? rooms.find(r => r.id === survivingRoom)?.name || ''
     : ''
 
   return (
@@ -93,29 +100,65 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
         )}
         {gamePhase === 'knocking' && (
           <div>
-            <span className="text-blood-glow font-bold text-xs tracking-widest">KILLER APPROACHES</span>
-            {knockedRoomName && (
-              <motion.p
-                className="text-xs text-white mt-2 font-mono"
-                animate={{ opacity: [1, 0.4, 1] }}
-                transition={{ duration: 0.5, repeat: Infinity }}
-              >
-                [ CHECKING: {knockedRoomName} ]
-              </motion.p>
-            )}
+            <span className="text-blood-glow font-bold text-xs tracking-widest">KILLERS APPROACH</span>
+            <div className="mt-2 space-y-1">
+              {knockedRoom1Name && (
+                <motion.p
+                  className="text-xs text-white font-mono"
+                  animate={{ opacity: [1, 0.4, 1] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                >
+                  [ K1: {knockedRoom1Name} ]
+                </motion.p>
+              )}
+              {knockedRoom2Name && (
+                <motion.p
+                  className="text-xs text-white font-mono"
+                  animate={{ opacity: [1, 0.4, 1] }}
+                  transition={{ duration: 0.5, repeat: Infinity, delay: 0.25 }}
+                >
+                  [ K2: {knockedRoom2Name} ]
+                </motion.p>
+              )}
+            </div>
           </div>
         )}
         {gamePhase === 'killing' && (
           <div>
-            <span className="text-blood-glow font-bold text-xs tracking-widest animate-glitch">BLOOD SPILLED!</span>
-            {killRoomName && (
-              <motion.p
-                className="text-sm text-blood mt-2 font-mono font-bold"
-                animate={{ scale: [1, 1.05, 1], textShadow: ["0 0 0px #ff1a1a", "0 0 10px #ff1a1a", "0 0 0px #ff1a1a"] }}
-                transition={{ duration: 0.3, repeat: Infinity }}
-              >
-                VICTIM FOUND IN {killRoomName}
-              </motion.p>
+            {killStep < killSequence.length - 1 ? (
+              <>
+                <span className="text-blood-glow font-bold text-xs tracking-widest animate-glitch">ROOM BY ROOM...</span>
+                <motion.p
+                  className="text-sm text-blood mt-2 font-mono font-bold"
+                  key={killStep}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  KILL {Math.min(killStep + 1, killSequence.length)}/{killSequence.length}
+                </motion.p>
+                <p className="text-[10px] text-horror-muted mt-1 font-mono">
+                  {rooms.find(r => r.id === killSequence[killStep]?.roomId)?.name || '...'} — BREACHED
+                </p>
+              </>
+            ) : (
+              <>
+                <motion.span
+                  className="text-blood-glow font-bold text-xs tracking-widest block"
+                  animate={{ opacity: [1, 0.3, 1], scale: [1, 1.02, 1] }}
+                  transition={{ duration: 0.8, repeat: Infinity }}
+                >
+                  ☠ FINAL KILL ☠
+                </motion.span>
+                <motion.p
+                  className="text-sm text-blood mt-2 font-mono font-bold"
+                  animate={{ scale: [1, 1.08, 1], textShadow: ["0 0 0px #ff1a1a", "0 0 15px #ff1a1a", "0 0 0px #ff1a1a"] }}
+                  transition={{ duration: 0.4, repeat: Infinity }}
+                >
+                  BOTH KILLERS CONVERGE
+                </motion.p>
+                <p className="text-[10px] text-horror-muted mt-1 font-mono">2 ROOMS LEFT — 1 MUST DIE</p>
+              </>
             )}
           </div>
         )}
@@ -149,7 +192,7 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
                   {alreadyFreeBet ? 'PREDICTION LOGGED' : 'FREE GUESS'}
                 </p>
                 <p className={`text-[9px] font-mono lowercase tracking-wide mt-1 ${alreadyFreeBet ? 'text-void-border' : 'text-horror-muted'}`}>
-                  {alreadyFreeBet ? 'awaiting blood' : 'survive for 0.01 sol dev buy'}
+                  {alreadyFreeBet ? 'awaiting blood' : 'pick the surviving room for 0.01 sol dev buy'}
                 </p>
               </div>
               {!alreadyFreeBet && (
@@ -224,20 +267,23 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
       <div className="px-5 py-4 flex-1 overflow-hidden flex flex-col">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-3.5 h-3.5 text-horror-accent" />
-          <span className="text-horror-muted text-[10px] font-mono tracking-[0.2em] uppercase">TARGETS</span>
+          <span className="text-horror-muted text-[10px] font-mono tracking-[0.2em] uppercase">ROOMS</span>
         </div>
         <div className="space-y-2 max-h-[220px] overflow-y-auto pr-2 custom-scrollbar">
           {bettableRooms.map(room => {
             const gamblingTotal = getTotalGamblingBetsForRoom(room.id)
             const freeCount = getFreeBetCountForRoom(room.id)
-            const isKillTarget = killerKillRoom === room.id && (gamePhase === 'killing' || gamePhase === 'result')
+            const isKillTarget = isRoomKilled(room.id) && (gamePhase === 'killing' || gamePhase === 'result')
+            const isSurvivor = survivingRoom === room.id && (gamePhase === 'killing' || gamePhase === 'result')
             const pctOfPot = totalPot > 0 ? ((gamblingTotal / totalPot) * 100).toFixed(0) : '0'
 
             return (
               <div
                 key={room.id}
                 className={`relative px-4 py-3 border transition-all duration-300 group ${
-                  isKillTarget
+                  isSurvivor
+                    ? 'border-green-500 bg-green-900/20 shadow-[inset_0_0_15px_rgba(0,255,100,0.15)]'
+                    : isKillTarget
                     ? 'border-blood-glow bg-blood-dark/30 shadow-[inset_0_0_15px_rgba(255,26,26,0.2)]'
                     : 'border-void-border bg-void-light/50 hover:bg-void-light hover:border-white/20'
                 }`}
@@ -248,11 +294,12 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
                 <div className="flex items-center justify-between relative z-10">
                   <div className="flex items-center gap-3">
                     <span className={`w-6 h-6 flex items-center justify-center text-[10px] font-bold font-mono border ${
-                      isKillTarget ? 'border-blood-glow text-blood-glow bg-blood-dark' : 'border-void-border text-horror-muted bg-void'
+                      isSurvivor ? 'border-green-500 text-green-400 bg-green-900/30'
+                      : isKillTarget ? 'border-blood-glow text-blood-glow bg-blood-dark' : 'border-void-border text-horror-muted bg-void'
                     }`}>
                       {room.id}
                     </span>
-                    <span className={`text-[11px] font-bold tracking-wider ${isKillTarget ? 'text-white' : 'text-horror-text'}`}>
+                    <span className={`text-[11px] font-bold tracking-wider ${isSurvivor ? 'text-green-400' : isKillTarget ? 'text-white' : 'text-horror-text'}`}>
                       {room.name}
                     </span>
                   </div>
@@ -262,7 +309,7 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
                         {freeCount}<Skull className="w-2.5 h-2.5" />
                       </span>
                     )}
-                    <span className={`text-[11px] font-mono ${isKillTarget ? 'text-blood-glow' : 'text-white'}`}>
+                    <span className={`text-[11px] font-mono ${isSurvivor ? 'text-green-400' : isKillTarget ? 'text-blood-glow' : 'text-white'}`}>
                       {gamblingTotal > 0 ? `${gamblingTotal.toFixed(2)}` : '—'}
                     </span>
                     {totalPot > 0 && gamblingTotal > 0 && (
@@ -282,7 +329,8 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
           <div className="absolute inset-0 bg-blood-glow opacity-[0.02] pointer-events-none" />
           <div className="border border-void-border bg-void p-4 space-y-4 relative z-10">
             <p className="text-horror-text text-[10px] font-mono uppercase tracking-widest text-center border-b border-void-border pb-3">
-              VICTIM FOUND IN: <br/><strong className="text-blood-glow text-xs mt-1 block animate-pulse">{killRoomName}</strong>
+              SOLE SURVIVOR: <br/><strong className="text-green-400 text-xs mt-1 block animate-pulse" style={{ textShadow: '0 0 8px #00ff66' }}>{survivingRoomName}</strong>
+              <span className="text-blood-glow text-[9px] block mt-1">{roundResult.killedRooms.length} ROOMS MASSACRED</span>
             </p>
 
             {/* Free bet results */}
@@ -357,9 +405,9 @@ export function BettingSidebar({ onOpenFreeBet, onOpenGambling }: BettingSidebar
       {/* ── Footer hint ── */}
       <div className="px-5 py-3 border-t border-void-border bg-void-light/30">
         <p className="text-[9px] text-horror-muted font-mono lowercase tracking-wide text-center">
-          {gamePhase === 'betting' && 'Select target or wager soul'}
-          {gamePhase === 'knocking' && 'Silence... he searches'}
-          {gamePhase === 'killing' && 'Blood is drawn'}
+          {gamePhase === 'betting' && 'Pick the room that survives'}
+          {gamePhase === 'knocking' && 'Silence... they search'}
+          {gamePhase === 'killing' && 'Blood is drawn in 6 rooms'}
           {gamePhase === 'result' && 'The cycle continues'}
         </p>
       </div>

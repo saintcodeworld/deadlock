@@ -25,12 +25,26 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   round_number INTEGER NOT NULL DEFAULT 1,
   game_phase TEXT NOT NULL CHECK (game_phase IN ('betting', 'knocking', 'killing', 'result')),
   round_time_remaining INTEGER NOT NULL DEFAULT 60,
-  killer_position_x NUMERIC NOT NULL DEFAULT 360,
+  -- Killer 1
+  killer_position_x NUMERIC NOT NULL DEFAULT 340,
   killer_position_y NUMERIC NOT NULL DEFAULT 375,
   killer_target_room INTEGER,
   killer_knocking_room INTEGER,
-  killer_kill_room INTEGER,
+  killer_kill_rooms INTEGER[] DEFAULT '{}',
+  -- Killer 2
+  killer2_position_x NUMERIC NOT NULL DEFAULT 380,
+  killer2_position_y NUMERIC NOT NULL DEFAULT 375,
+  killer2_target_room INTEGER,
+  killer2_knocking_room INTEGER,
+  killer2_kill_rooms INTEGER[] DEFAULT '{}',
+  -- Surviving room (1 of 7)
+  surviving_room INTEGER,
+  -- Kill sequence (step-by-step)
+  kill_sequence JSONB DEFAULT '[]',
+  kill_step INTEGER DEFAULT -1,
+  -- Knock sequences
   knock_sequence INTEGER[],
+  knock2_sequence INTEGER[],
   knock_index INTEGER DEFAULT 0,
   is_killing BOOLEAN DEFAULT FALSE,
   total_pot NUMERIC DEFAULT 0,

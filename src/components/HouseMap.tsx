@@ -14,12 +14,13 @@ interface HouseMapProps {
 }
 
 export function HouseMap({ onRoomClick }: HouseMapProps) {
-  const { rooms, killerPosition, selectedRoom, selectRoom, gamePhase, killerKnockingRoom, killerKillRoom, isKilling, playerPositions } = useGame()
+  const { rooms, killerPosition, killer2Position, selectedRoom, selectRoom, gamePhase, killerKnockingRoom, killer2KnockingRoom, killStep, isKilling, isRoomKilled, playerPositions } = useGame()
   const { playKnock } = useKnockSound()
   const { playKill } = useKillSound()
   const prevKnockingRoomRef = useRef<number | null>(null)
+  const prevKnocking2RoomRef = useRef<number | null>(null)
 
-  // Play knock sound each time the killer arrives at a new door
+  // Play knock sound each time killer1 arrives at a new door
   useEffect(() => {
     if (killerKnockingRoom !== null && killerKnockingRoom !== prevKnockingRoomRef.current) {
       playKnock()
@@ -27,12 +28,25 @@ export function HouseMap({ onRoomClick }: HouseMapProps) {
     prevKnockingRoomRef.current = killerKnockingRoom
   }, [killerKnockingRoom, playKnock])
 
-  // Play kill sound when killing phase starts
+  // Play knock sound each time killer2 arrives at a new door
   useEffect(() => {
-    if (gamePhase === 'killing' && isKilling) {
-      playKill()
+    if (killer2KnockingRoom !== null && killer2KnockingRoom !== prevKnocking2RoomRef.current) {
+      playKnock()
     }
-  }, [gamePhase, isKilling, playKill])
+    prevKnocking2RoomRef.current = killer2KnockingRoom
+  }, [killer2KnockingRoom, playKnock])
+
+  // Play kill sound on each kill step
+  const prevKillStepRef = useRef<number>(-1)
+  useEffect(() => {
+    if (gamePhase === 'killing' && isKilling && killStep >= 0 && killStep !== prevKillStepRef.current) {
+      playKill()
+      prevKillStepRef.current = killStep
+    }
+    if (gamePhase !== 'killing') {
+      prevKillStepRef.current = -1
+    }
+  }, [gamePhase, isKilling, killStep, playKill])
 
   const WALL = 8 // wall thickness
 
@@ -371,10 +385,17 @@ export function HouseMap({ onRoomClick }: HouseMapProps) {
               <line x1={18} y1={560} x2={26} y2={560} />
             </g>
 
-            {/* ========== KILLER ========== */}
+            {/* ========== KILLER 1 ========== */}
             <Killer
               position={killerPosition}
               isKnocking={gamePhase === 'knocking' && killerKnockingRoom !== null}
+              isKilling={gamePhase === 'killing' && isKilling}
+            />
+
+            {/* ========== KILLER 2 ========== */}
+            <Killer
+              position={killer2Position}
+              isKnocking={gamePhase === 'knocking' && killer2KnockingRoom !== null}
               isKilling={gamePhase === 'killing' && isKilling}
             />
 
@@ -394,7 +415,7 @@ export function HouseMap({ onRoomClick }: HouseMapProps) {
                       roomWidth={room.width}
                       roomHeight={room.height}
                       personIndex={idx}
-                      isKilled={killerKillRoom === room.id && isKilling}
+                      isKilled={isRoomKilled(room.id)}
                     />
                   ))}
                 </g>

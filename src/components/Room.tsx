@@ -11,18 +11,29 @@ interface RoomProps {
 }
 
 export function Room({ room, isSelected, onClick }: RoomProps) {
-  const { getTotalGamblingBetsForRoom, getFreeBetCountForRoom, killerTargetRoom, killerKnockingRoom, killerKillRoom, gamePhase, isKilling, playerPositions } = useGame()
+  const { getTotalGamblingBetsForRoom, getFreeBetCountForRoom, killerTargetRoom, killer2TargetRoom, killerKnockingRoom, killer2KnockingRoom, isRoomKilled, survivingRoom, killSequence, killStep, gamePhase, isKilling, playerPositions } = useGame()
   const totalGambling = getTotalGamblingBetsForRoom(room.id)
   const freeCount = getFreeBetCountForRoom(room.id)
-  const isKillerHere = killerTargetRoom === room.id
-  const isBeingKnocked = killerKnockingRoom === room.id
-  const isBeingKilled = killerKillRoom === room.id && isKilling
+  const isKillerHere = killerTargetRoom === room.id || killer2TargetRoom === room.id
+  const isBeingKnocked = killerKnockingRoom === room.id || killer2KnockingRoom === room.id
+  // Currently being killed RIGHT NOW at this step
+  const isActiveKill = gamePhase === 'killing' && isKilling && killStep >= 0 && killStep < killSequence.length && killSequence[killStep]?.roomId === room.id
+  // Already dead from a previous step
+  const isAlreadyDead = isRoomKilled(room.id) && !isActiveKill
+  const isBeingKilled = isActiveKill
+  // Only show surviving room after all kills complete or during result
+  const allKillsDone = killStep >= killSequence.length
+  const isSurviving = survivingRoom === room.id && (gamePhase === 'result' || (gamePhase === 'killing' && allKillsDone))
   const canClick = gamePhase === 'betting'
   
   const playersInRoom = playerPositions.filter((p: any) => p.roomId === room.id)
 
-  const overlayFill = isBeingKilled
+  const overlayFill = isSurviving
+    ? 'rgba(0, 255, 100, 0.25)'
+    : isActiveKill
     ? 'rgba(255, 0, 0, 0.4)'
+    : isAlreadyDead
+    ? 'rgba(80, 0, 0, 0.5)'
     : isBeingKnocked
     ? 'rgba(138, 3, 3, 0.2)'
     : isKillerHere
@@ -35,8 +46,12 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
     ? 'rgba(255, 255, 255, 0.05)'
     : overlayFill
 
-  const borderColor = isBeingKilled
+  const borderColor = isSurviving
+    ? '#00ff66'
+    : isActiveKill
     ? '#ff0000'
+    : isAlreadyDead
+    ? '#4a0000'
     : isBeingKnocked
     ? '#8a0303'
     : isKillerHere
@@ -242,6 +257,49 @@ export function Room({ room, isSelected, onClick }: RoomProps) {
             style={{ textShadow: '0 0 10px #ff1a1a' }}
           >
             FATALITY
+          </motion.text>
+        </>
+      )}
+
+      {/* Already dead from previous kill step — dim static overlay */}
+      {isAlreadyDead && gamePhase === 'killing' && (
+        <>
+          <rect
+            x={room.x + 2} y={room.y + 2}
+            width={room.width - 4} height={room.height - 4} rx={0}
+            fill="rgba(60,0,0,0.4)" stroke="#4a0000" strokeWidth={1.5}
+            opacity={0.8}
+          />
+          <text
+            x={labelCx} y={room.y + room.height - 30}
+            textAnchor="middle" fill="#6a0000"
+            fontSize="9" fontFamily="monospace" fontWeight="bold" letterSpacing="2"
+            opacity={0.7}
+          >
+            DEAD
+          </text>
+        </>
+      )}
+
+      {/* Surviving room — green glow pulse */}
+      {isSurviving && (
+        <>
+          <motion.rect
+            x={room.x + 2} y={room.y + 2}
+            width={room.width - 4} height={room.height - 4} rx={0}
+            fill="rgba(0,255,100,0.08)" stroke="#00ff66" strokeWidth={2}
+            animate={{ opacity: [0.9, 0.5, 0.9] }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.text
+            x={labelCx} y={room.y + room.height - 30}
+            textAnchor="middle" fill="#00ff66"
+            fontSize="10" fontFamily="monospace" fontWeight="bold" letterSpacing="2"
+            animate={{ opacity: [1, 0.6, 1] }}
+            transition={{ duration: 1, repeat: Infinity }}
+            style={{ textShadow: '0 0 10px #00ff66' }}
+          >
+            SURVIVED
           </motion.text>
         </>
       )}
