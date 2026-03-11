@@ -48,7 +48,7 @@ export function GameHeader() {
           {/* Nav & Wallet Connect */}
           <div className="flex items-center gap-6">
             <a
-              href="https://x.com/i/communities/2030520825904812415"
+              href="https://x.com/i/communities/2031839433255751684"
               target="_blank"
               rel="noopener noreferrer"
               className="group hidden md:flex items-center gap-2 text-horror-muted hover:text-white transition-colors duration-300"
