@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="mask-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff" />
+      <stop offset="100%" stop-color="#ccc" />
+    </radialGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <circle cx="256" cy="256" r="240" fill="#000" stroke="#8a0303" stroke-width="12" />
+  <!-- Mask Shape -->
+  <path d="M256 80 C160 80 140 160 140 256 C140 380 200 440 256 440 C312 440 372 380 372 256 C372 160 352 80 256 80 Z" fill="url(#mask-grad)" filter="url(#shadow)"/>
+  <!-- Eye Holes -->
+  <circle cx="210" cy="220" r="25" fill="#000" />
+  <circle cx="302" cy="220" r="25" fill="#000" />
+  <!-- Breathing Holes -->
+  <circle cx="256" cy="300" r="8" fill="#333" />
+  <circle cx="230" cy="320" r="8" fill="#333" />
+  <circle cx="282" cy="320" r="8" fill="#333" />
+  <circle cx="210" cy="340" r="8" fill="#333" />
+  <circle cx="302" cy="340" r="8" fill="#333" />
+  <!-- $HIDE Text -->
+  <text x="256" y="480" fill="#8a0303" font-family="monospace" font-size="40" font-weight="bold" text-anchor="middle" letter-spacing="10">$HIDE</text>
+</svg>

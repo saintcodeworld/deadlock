@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <filter id="glitch">
+      <feOffset in="SourceGraphic" dx="-5" dy="0" result="off1" />
+      <feOffset in="SourceGraphic" dx="5" dy="0" result="off2" />
+      <feColorMatrix in="off1" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red" />
+      <feColorMatrix in="off2" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="cyan" />
+      <feBlend in="red" in2="cyan" mode="screen" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="#000" />
+  <!-- Spectral Figure -->
+  <g filter="url(#glitch)">
+    <path d="M256 120 Q200 120 180 200 T256 400 T332 200 Q312 120 256 120" fill="rgba(255,255,255,0.2)" />
+    <circle cx="230" cy="200" r="10" fill="white" />
+    <circle cx="282" cy="200" r="10" fill="white" />
+    <path d="M230 260 Q256 280 282 260" stroke="white" fill="none" />
+  </g>
+  <text x="256" y="460" fill="white" font-family="monospace" font-size="50" font-weight="bold" text-anchor="middle" filter="url(#glitch)">$HIDE</text>
+  <!-- Scanlines -->
+  <line x1="0" y1="100" x2="512" y2="100" stroke="rgba(255,255,255,0.1)" stroke-width="1" />
+  <line x1="0" y1="200" x2="512" y2="200" stroke="rgba(255,255,255,0.1)" stroke-width="1" />
+  <line x1="0" y1="300" x2="512" y2="300" stroke="rgba(255,255,255,0.1)" stroke-width="1" />
+  <line x1="0" y1="400" x2="512" y2="400" stroke="rgba(255,255,255,0.1)" stroke-width="1" />
+</svg>

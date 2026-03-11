@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1a2e" />
+      <stop offset="100%" stop-color="#1a2744" />
+    </linearGradient>
+    <linearGradient id="coin-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4a9eff" />
+      <stop offset="100%" stop-color="#00d4ff" />
+    </linearGradient>
+    <linearGradient id="slash-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff4a4a" />
+      <stop offset="100%" stop-color="#ff0000" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="15" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bg-grad)" stroke="url(#coin-grad)" stroke-width="16" />
+  
+  <!-- Inner ring -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#4a9eff" stroke-width="4" stroke-dasharray="12 12" opacity="0.5" />
+
+  <!-- Letter H -->
+  <path d="M180 160 v 192 M332 160 v 192 M180 256 h 152" fill="none" stroke="white" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Slash Mark -->
+  <path d="M120 120 L392 392" fill="none" stroke="url(#slash-grad)" stroke-width="32" stroke-linecap="round" filter="url(#glow)" />
+  <path d="M140 100 L412 372" fill="none" stroke="url(#slash-grad)" stroke-width="12" stroke-linecap="round" opacity="0.6" filter="url(#glow)" />
+  <path d="M100 140 L372 412" fill="none" stroke="url(#slash-grad)" stroke-width="12" stroke-linecap="round" opacity="0.6" filter="url(#glow)" />
+
+  <!-- Blood Splatter Dots -->
+  <circle cx="360" cy="380" r="12" fill="#ff0000" />
+  <circle cx="390" cy="350" r="8" fill="#ff0000" />
+  <circle cx="410" cy="400" r="16" fill="#ff0000" />
+  <circle cx="150" cy="160" r="10" fill="#ff0000" />
+  <circle cx="120" cy="180" r="6" fill="#ff0000" />
+  
+  <!-- Text -->
+  <text x="256" y="420" fill="#4a9eff" font-family="monospace" font-size="36" font-weight="bold" text-anchor="middle" letter-spacing="8">HIDECOIN</text>
+</svg>

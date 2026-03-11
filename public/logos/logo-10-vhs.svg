@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#000" />
+  <!-- Distorted $HIDE -->
+  <g fill="#fff" font-family="monospace" font-weight="bold" text-anchor="middle">
+    <text x="256" y="240" font-size="120" opacity="0.8">$HIDE</text>
+    <!-- Glitch Bars -->
+    <rect x="50" y="180" width="412" height="5" fill="#ff00ff" opacity="0.5" />
+    <rect x="50" y="220" width="412" height="8" fill="#00ffff" opacity="0.5" />
+    <rect x="100" y="200" width="50" height="60" fill="#fff" opacity="0.3" />
+  </g>
+  <!-- Static/Noise Effect (simplified) -->
+  <g opacity="0.2">
+    <circle cx="100" cy="100" r="1" fill="#fff" />
+    <circle cx="200" cy="150" r="1" fill="#fff" />
+    <circle cx="300" cy="80" r="1" fill="#fff" />
+    <circle cx="400" cy="300" r="1" fill="#fff" />
+    <circle cx="150" cy="400" r="1" fill="#fff" />
+    <circle cx="350" cy="450" r="1" fill="#fff" />
+  </g>
+  <!-- VCR Text -->
+  <text x="50" y="50" fill="#fff" font-family="monospace" font-size="20" text-anchor="start">PLAY ▶</text>
+  <text x="50" y="480" fill="#fff" font-family="monospace" font-size="20" text-anchor="start">00:13:37</text>
+  <text x="462" y="480" fill="#fff" font-family="monospace" font-size="20" text-anchor="end">SP</text>
+</svg>

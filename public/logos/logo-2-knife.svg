@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="blade-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e0e0e0" />
+      <stop offset="100%" stop-color="#888" />
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="240" fill="#111" stroke="#444" stroke-width="8" />
+  <!-- Knife -->
+  <g transform="rotate(-45, 256, 256)">
+    <path d="M150 220 L450 220 C470 220 470 260 450 260 L150 260 Z" fill="url(#blade-grad)" />
+    <path d="M50 210 L150 210 L150 270 L50 270 Z" fill="#4a2a1a" /> <!-- Handle -->
+    <text x="300" y="248" fill="#8a0303" font-family="serif" font-size="24" font-style="italic" font-weight="bold">$HIDE</text>
+  </g>
+  <!-- Blood Drips -->
+  <path d="M380 380 Q390 420 400 380 Z" fill="#8a0303" />
+  <path d="M340 340 Q350 400 360 340 Z" fill="#8a0303" />
+</svg>

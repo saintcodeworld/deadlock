@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <circle cx="256" cy="256" r="240" fill="#000" stroke="#ffd700" stroke-width="4" />
+  <!-- Skull -->
+  <path d="M256 100 C170 100 150 180 150 260 C150 320 180 360 210 370 L210 420 L302 420 L302 370 C332 360 362 320 362 260 C362 180 342 100 256 100 Z" fill="#fff" />
+  <!-- Eye Sockets with H I D E -->
+  <rect x="190" y="220" width="50" height="60" rx="10" fill="#000" />
+  <rect x="272" y="220" width="50" height="60" rx="10" fill="#000" />
+  <text x="215" y="265" fill="#8a0303" font-family="monospace" font-size="30" font-weight="bold" text-anchor="middle">H</text>
+  <text x="297" y="265" fill="#8a0303" font-family="monospace" font-size="30" font-weight="bold" text-anchor="middle">I</text>
+  <!-- Nose -->
+  <path d="M256 300 L240 330 L272 330 Z" fill="#000" />
+  <!-- Teeth -->
+  <g stroke="#000" stroke-width="2">
+    <line x1="230" y1="390" x2="230" y2="420" />
+    <line x1="256" y1="390" x2="256" y2="420" />
+    <line x1="282" y1="390" x2="282" y2="420" />
+    <line x1="210" y1="405" x2="302" y2="405" />
+  </g>
+  <text x="256" y="480" fill="#ffd700" font-family="monospace" font-size="36" font-weight="bold" text-anchor="middle">$HIDE COIN</text>
+</svg>
